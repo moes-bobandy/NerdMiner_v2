@@ -99,12 +99,13 @@ static void dispatchChar(char key)
     }
     g_lastNavMs = now;
 
-    if (key == KEY_ENTER || key == ' ' || key == 'n' || key == '.' || key == '/') {
+    if (key == KEY_ENTER || key == ' ' || key == 'n' || key == '.' || key == '/' || key == ';') {
         Serial.println(F("Cardputer KB: next screen"));
         switchToNextScreen();
         return;
     }
-    if (key == 'p' || key == ',' || key == ';' || key == KEY_BACKSPACE) {
+    // Prev is p / comma only. Short KEY_BACKSPACE tap is handled on release.
+    if (key == 'p' || key == ',') {
         Serial.println(F("Cardputer KB: previous screen"));
         switchToPrevScreen();
         return;
@@ -141,14 +142,17 @@ static void handleEvent(uint8_t raw)
         return;
     }
 
-    if (key == 'x') {
+    // KEY_BACKSPACE (HID 0x2A): hold 5s = reset config; short tap = prev.
+    if ((uint8_t)key == KEY_BACKSPACE) {
         if (pressed) {
             if (!g_resetHeld) {
                 g_resetHeld = true;
                 g_resetHoldStart = millis();
             }
-        } else {
+        } else if (g_resetHeld) {
             g_resetHeld = false;
+            Serial.println(F("Cardputer KB: previous screen"));
+            switchToPrevScreen();
         }
         return;
     }
@@ -164,7 +168,7 @@ static void handleEvent(uint8_t raw)
         return;
     }
 
-    // Fn + arrows printed on ; , . / — same as next/prev.
+    // Fn + arrows: ';' and '.' '/' are next; ',' is prev.
     dispatchChar(key);
 }
 
@@ -243,7 +247,7 @@ void cardputerKeyboardTick()
 
     if (g_resetHeld && (millis() - g_resetHoldStart) >= CARDPUTER_RESET_HOLD_MS) {
         g_resetHeld = false;
-        Serial.println(F("Cardputer KB: hold X — reset configuration"));
+        Serial.println(F("Cardputer KB: hold KEY_BACKSPACE — reset configuration"));
         reset_configuration();
         return;
     }

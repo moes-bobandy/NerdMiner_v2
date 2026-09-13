@@ -187,11 +187,12 @@ Other standard pools not compatible with low difficulty share:
 
 G0 still behaves as a one-button device. The 56-key keyboard also drives the UI:
 
-- Enter / Space / `n` / `.` / `/` > next screen
-- `p` / `,` / `;` / Backspace > previous screen
+- Enter / Space / `n` / `.` / `/` / `;` > next screen
+- `p` / `,` > previous screen
+- Short tap Backspace (`KEY_BACKSPACE` / HID `0x2A`) > previous screen
 - `1`–`4` > jump to a cyclic screen
 - `r` > rotate; `b` / Tab / Fn+\` > backlight
-- Hold `x` 5 seconds > reset configuration
+- Hold Backspace (`KEY_BACKSPACE` / HID `0x2A`) 5 seconds > reset configuration
 - Hold Enter, `c`, or `w` at boot > Wi‑Fi config portal
 
 #### Two button devices:

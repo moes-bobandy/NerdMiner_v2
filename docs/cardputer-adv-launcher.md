@@ -73,12 +73,13 @@ Stock upstream Adv support only wired **G0** as a one-button device. This fork d
 
 | Key | Action |
 | --- | --- |
-| Enter, Space, `n`, `.`, `/` | Next screen |
-| `p`, `,`, `;`, Backspace | Previous screen |
+| Enter, Space, `n`, `.`, `/`, `;` | Next screen |
+| `p`, `,` | Previous screen |
+| Short tap Backspace (`KEY_BACKSPACE` / HID `0x2A`) | Previous screen |
 | `1`–`4` | Jump to cyclic screen 0–3 |
 | `r` | Rotate display |
 | `b`, Tab, Fn+`` ` `` | Toggle backlight |
-| Hold `x` 5 seconds | Reset config and reboot |
+| Hold Backspace (`KEY_BACKSPACE` / HID `0x2A`) 5 seconds | Reset config and reboot |
 | Hold Enter / `c` / `w` at boot | Open Wi‑Fi config portal |
 | G0 (BOOT) | Same as a one-button device (click = next, long-press = reset) |
 

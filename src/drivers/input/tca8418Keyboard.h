@@ -19,7 +19,7 @@
 #define TCA8418_INT_PIN 11
 #endif
 
-// Hold X (or Fn+X) this long to wipe config, matching the GPIO long-press.
+// Hold KEY_BACKSPACE (HID 0x2A, Adv top-right) this long to wipe config.
 #ifndef CARDPUTER_RESET_HOLD_MS
 #define CARDPUTER_RESET_HOLD_MS 5000
 #endif
