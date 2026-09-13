@@ -13,10 +13,10 @@ Stock PlatformIO env `M5-Cardputer-Adv` is unchanged (keyboard + Launcher path f
 | EXT mining | `nerd_mining()` | ILI9341 320×240 on HSPI | Same stock V1 visual scheme, scaled to 320×240, with a denser mining-goods band. Not a 1:1 blit and not a clone of INT. |
 | Fallback | `nerd_mining()` → `nerd_nav()` | INT only | EXT init fail or `-DNERDMINER_DUAL_FORCE_INT=1`. Full V1 cyclic screens on INT, same as stock. |
 
-When EXT is up, INT and EXT share the **stock V1 visual scheme** (logo, chrome, DigitalNumbers / `0xDEDB`, layout family) but **different info** — not identical clones:
+When EXT is up, INT and EXT share the **stock V1 visual scheme** (logo, chrome, fonts like single-screen NerdMiner) but **different info** — not identical clones:
 
-- **INT (240×135):** stock look, nav/cyclic status screens (what you need to drive the miner).
-- **EXT (320×240):** same scheme, denser mining goods / live stats.
+- **INT (240×135):** nav/status only
+- **EXT (320×240):** mining goods
 
 No stripped NETWORK-only debug chrome. No per-tick INT `fillSprite` except the stock screen's own `pushSprite`.
 

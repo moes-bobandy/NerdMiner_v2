@@ -207,7 +207,8 @@ class DualScreenContractTests(unittest.TestCase):
         self.assertIn("BLOCK TEMPLATES", docs)
         self.assertIn("v2.1b", docs)
         self.assertIn("not identical clones", docs)
-        self.assertIn("denser mining goods", docs)
+        self.assertIn("nav/status only", docs)
+        self.assertIn("mining goods", docs)
         launcher = read("docs/cardputer-adv-launcher.md")
         self.assertIn("M5-Cardputer-Adv-dual", launcher)
 

@@ -92,8 +92,8 @@ void nerd_draw_int_nav_hud(int screenIndex, unsigned long mElapsed)
         screenIndex = 0;
     }
 
-    // LOCKED v2.1b: same stock V1 scheme as EXT, different info (not clones).
-    // INT = nav/cyclic status screens; denser live mining goods stay on EXT.
+    // ARCH v2.1b addendum: same stock V1 scheme, info split.
+    // INT = nav/status only. EXT = mining goods.
     const bool viewChanged = (screenIndex != s_intDrawn);
     if (!s_intDirty && !viewChanged && mElapsed == 0) {
         return;
