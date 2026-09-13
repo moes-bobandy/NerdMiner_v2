@@ -76,24 +76,14 @@ static bool takeField(char *slot, size_t cap, const char *now)
     return true;
 }
 
-static void enterExtScreen(int id)
+static void blitStockOnce(int screenIndex)
 {
-    if (s_extScreen != id) {
-        ili9341ExtFillScreen(C_BG);
-        s_extScreen = id;
-        clearFieldCache();
-    }
-}
-
-static void blitLiveStock(int screenIndex, unsigned long mElapsed)
-{
-    // Full stock V1 frame (art + DigitalNumbers / 0xDEDB), then restore INT sprite.
-    tDisplayV1ComposeCyclic(screenIndex, mElapsed, false);
+    // One stock V1 compose (mElapsed 0) + one scale-blit. INT sprite stays nav/status.
+    tDisplayV1ComposeCyclic(screenIndex, 0, false);
     uint16_t sw = 0, sh = 0;
     const uint16_t *bits = tDisplayV1SpriteBits(&sw, &sh);
     if (!bits || sw == 0 || sh == 0) {
         s_artH = 180;
-        tDisplayV1ComposeCyclic(screenIndex, 0, false);
         return;
     }
     int16_t dh = (int16_t)((int32_t)sh * W / sw);
@@ -102,12 +92,23 @@ static void blitLiveStock(int screenIndex, unsigned long mElapsed)
     }
     s_artH = dh;
     ili9341ExtPushImageScaled(0, 0, W, dh, bits, (int16_t)sw, (int16_t)sh);
-    tDisplayV1ComposeCyclic(screenIndex, 0, false);
+}
+
+static void enterExtScreen(int id, int stockIndex)
+{
+    // Index change only: one FillScreen + one stock compose. Steady ticks skip this.
+    if (s_extScreen == id) {
+        return;
+    }
+    ili9341ExtFillScreen(C_BG);
+    s_extScreen = id;
+    clearFieldCache();
+    blitStockOnce(stockIndex);
 }
 
 static void drawGoodsBand(void)
 {
-    ili9341ExtFillRect(0, s_artH, W, (int16_t)(H - s_artH), C_BG);
+    // FillScreen already cleared the panel. Separator only — no second wipe.
     ili9341ExtHLine(0, s_artH, W, C_CREAM);
 }
 
@@ -128,13 +129,11 @@ static void dirtyText(char *slot, size_t cap, const char *text,
 
 static void extMinerScreen(unsigned long mElapsed)
 {
+    enterExtScreen(EXT_SCR_MINER, 0);
     mining_data data = getMiningData(mElapsed);
     Serial.printf(">>> EXT miner %s KH/s shares=%s hashes=%sK\n",
                   data.currentHashRate.c_str(), data.completedShares.c_str(),
                   data.totalKHashes.c_str());
-
-    enterExtScreen(EXT_SCR_MINER);
-    blitLiveStock(0, mElapsed);
     if (!s_chrome) {
         drawGoodsBand();
         ili9341ExtDrawText(8, (int16_t)(s_artH + 4), "BLOCK TEMPLATES", C_MUTED, C_BG, 1);
@@ -158,11 +157,9 @@ static void extMinerScreen(unsigned long mElapsed)
 
 static void extClockScreen(unsigned long mElapsed)
 {
+    enterExtScreen(EXT_SCR_CLOCK, 1);
     clock_data data = getClockData(mElapsed);
     Serial.printf(">>> EXT clock %s rate=%s\n", data.currentTime.c_str(), data.currentHashRate.c_str());
-
-    enterExtScreen(EXT_SCR_CLOCK);
-    blitLiveStock(1, mElapsed);
     if (!s_chrome) {
         drawGoodsBand();
         ili9341ExtDrawText(8, (int16_t)(s_artH + 8), "HASHRATE KH/s", C_MUTED, C_BG, 1);
@@ -178,11 +175,9 @@ static void extClockScreen(unsigned long mElapsed)
 
 static void extGlobalScreen(unsigned long mElapsed)
 {
+    enterExtScreen(EXT_SCR_GLOBAL, 2);
     coin_data data = getCoinData(mElapsed);
     Serial.printf(">>> EXT global %s height=%s\n", data.globalHashRate.c_str(), data.blockHeight.c_str());
-
-    enterExtScreen(EXT_SCR_GLOBAL);
-    blitLiveStock(2, mElapsed);
     if (!s_chrome) {
         drawGoodsBand();
         ili9341ExtDrawText(8, (int16_t)(s_artH + 6), "GLOBAL HASH", C_MUTED, C_BG, 1);
@@ -209,11 +204,9 @@ static void extGlobalScreen(unsigned long mElapsed)
 
 static void extPriceScreen(unsigned long mElapsed)
 {
+    enterExtScreen(EXT_SCR_PRICE, 3);
     clock_data data = getClockData(mElapsed);
     Serial.printf(">>> EXT price %s rate=%s\n", data.btcPrice.c_str(), data.currentHashRate.c_str());
-
-    enterExtScreen(EXT_SCR_PRICE);
-    blitLiveStock(3, mElapsed);
     if (!s_chrome) {
         drawGoodsBand();
         ili9341ExtDrawText(8, (int16_t)(s_artH + 8), "HASHRATE KH/s", C_MUTED, C_BG, 1);
