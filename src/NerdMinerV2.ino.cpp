@@ -20,6 +20,10 @@
 #include "TouchHandler.h"
 #endif
 
+#ifdef M5_CARDPUTER_ADV
+#include "drivers/input/tca8418Keyboard.h"
+#endif
+
 #include <soc/soc_caps.h>
 //#define HW_SHA256_TEST
 
@@ -82,6 +86,11 @@ void setup()
 
 #ifdef HW_SHA256_TEST
   while (1) HwShaTest();
+#endif
+
+#ifdef M5_CARDPUTER_ADV
+  // TCA8418 keyboard UI (required for Adv; G0 remains a one-button fallback).
+  cardputerKeyboardBegin();
 #endif
 
   // Setup the buttons
@@ -213,6 +222,10 @@ void loop() {
 
 #ifdef TOUCH_ENABLE
   touchHandler.isTouched();
+#endif
+
+#ifdef M5_CARDPUTER_ADV
+  cardputerKeyboardTick();
 #endif
   wifiManagerProcess(); // avoid delays() in loop when non-blocking and other long running code
 

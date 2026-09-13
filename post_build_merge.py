@@ -144,6 +144,29 @@ def create_merged_firmware(source, target, env):
         import shutil
         shutil.copy2(firmware_file, update_file)
         print(f"✅ Firmware: {update_file.name}")
+
+        # Launcher / OTA / SD install needs the ESP *app* image.
+        # ESP32-S3 bootloaders also start with 0xE9, so also reject images
+        # that contain a second app at 0x10000 (merged factory layout).
+        fw_bytes = firmware_file.read_bytes()
+        magic = fw_bytes[:1]
+        merged_app = len(fw_bytes) > 0x10000 and fw_bytes[0x10000] == 0xE9
+        if magic == b"\xe9" and not merged_app:
+            print(f"✅ App image magic 0xE9 verified ({firmware_file.stat().st_size} bytes)")
+        elif merged_app:
+            print("⚠️  File looks like a merged factory image (0xE9 at 0x10000)")
+        else:
+            shown = magic.hex() if magic else "empty"
+            print(f"⚠️  Unexpected firmware magic 0x{shown} (expected 0xE9 ESP app image)")
+
+        if env_name == "M5-Cardputer-Adv":
+            launcher_dir = project_dir / "firmware" / "launcher"
+            launcher_dir.mkdir(parents=True, exist_ok=True)
+            launcher_file = launcher_dir / "NerdMiner_v2_M5-Cardputer-Adv.bin"
+            shutil.copy2(firmware_file, launcher_file)
+            print(f"✅ Launcher app-only bin: {launcher_file}")
+            print("   Install via bmorcelli Launcher SD/OTA. Do NOT flash the factory merge")
+            print("   (that image starts at 0x0 and would overwrite Launcher).")
     except Exception as e:
         print(f"❌ Error creating firmware file: {e}")
         return

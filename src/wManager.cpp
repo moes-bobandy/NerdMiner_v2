@@ -16,6 +16,10 @@
 #include "mining.h"
 #include "timeconst.h"
 
+#ifdef M5_CARDPUTER_ADV
+#include "drivers/input/tca8418Keyboard.h"
+#endif
+
 #include <ArduinoJson.h>
 #include <esp_flash.h>
 
@@ -156,6 +160,13 @@ void init_WifiManager()
         Serial.println(F("Button pressed to force start config mode"));
         forceConfig = true;
         wm.setBreakAfterConfig(true); //Set to detect config edition and save
+    }
+#endif
+#ifdef M5_CARDPUTER_ADV
+    if (cardputerKeyboardWantsConfig()) {
+        Serial.println(F("Cardputer KB: Enter/C/W held — start config portal"));
+        forceConfig = true;
+        wm.setBreakAfterConfig(true);
     }
 #endif
     // Explicitly set WiFi mode
