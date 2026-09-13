@@ -13,7 +13,12 @@ Install **[bmorcelli Launcher](https://github.com/bmorcelli/Launcher)** first (`
 | `firmware/<version>/M5-Cardputer-Adv_firmware.bin` | Same app image (post-build copy) | **Yes** |
 | `firmware/<version>/M5-Cardputer-Adv_factory.bin` | Merged flash (bootloader + partitions + app @ 0x0) | **No** — overwrites Launcher |
 
-A factory/merged image does **not** start with `0xE9` at offset 0 (it starts with the bootloader). Launcher treats `0xE9` as a normal application binary and writes it into an OTA app partition.
+On ESP32-S3 the **bootloader also starts with `0xE9`** and sits at flash offset `0x0`, so a merged factory file can look like an app image if you only check the first byte. Distinguishing checks:
+
+- App-only `firmware.bin`: `0xE9` at offset `0`, **no** second image at `0x10000`
+- Factory merge: `0xE9` at `0` (bootloader) **and** `0xE9` at `0x10000` (the real app)
+
+`scripts/export_launcher_bin.py` requires `0xE9` at offset 0 and **rejects** files that also have `0xE9` at `0x10000`. Launcher writes a true app image into an OTA partition and leaves Launcher itself installed.
 
 Check the magic locally:
 

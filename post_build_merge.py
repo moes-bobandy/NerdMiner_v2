@@ -145,11 +145,16 @@ def create_merged_firmware(source, target, env):
         shutil.copy2(firmware_file, update_file)
         print(f"✅ Firmware: {update_file.name}")
 
-        # Launcher / OTA / SD install needs the ESP app image (magic 0xE9),
-        # NOT the merged factory file (bootloader+partitions+app).
-        magic = firmware_file.read_bytes()[:1]
-        if magic == b"\xe9":
+        # Launcher / OTA / SD install needs the ESP *app* image.
+        # ESP32-S3 bootloaders also start with 0xE9, so also reject images
+        # that contain a second app at 0x10000 (merged factory layout).
+        fw_bytes = firmware_file.read_bytes()
+        magic = fw_bytes[:1]
+        merged_app = len(fw_bytes) > 0x10000 and fw_bytes[0x10000] == 0xE9
+        if magic == b"\xe9" and not merged_app:
             print(f"✅ App image magic 0xE9 verified ({firmware_file.stat().st_size} bytes)")
+        elif merged_app:
+            print("⚠️  File looks like a merged factory image (0xE9 at 0x10000)")
         else:
             shown = magic.hex() if magic else "empty"
             print(f"⚠️  Unexpected firmware magic 0x{shown} (expected 0xE9 ESP app image)")

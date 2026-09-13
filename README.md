@@ -68,7 +68,7 @@ Every time an stratum job notification is received miner update its current work
 
 #### Cardputer Adv + bmorcelli Launcher
 
-Flash Launcher for `m5stack-cardputer-adv` first, then install the **app-only** NerdMiner image (ESP magic `0xE9`) from SD/OTA. Do **not** flash the merged `*_factory.bin` through Launcher — that image starts at `0x0` and wipes Launcher.
+Flash Launcher for `m5stack-cardputer-adv` first, then install the **app-only** NerdMiner image (`firmware.bin`, ESP magic `0xE9` at offset 0 and **not** at `0x10000`) from SD/OTA. Do **not** flash the merged `*_factory.bin` through Launcher — on ESP32-S3 that file also starts with `0xE9` (bootloader at `0x0`) and would overwrite Launcher.
 
 ```bash
 pio run -e M5-Cardputer-Adv

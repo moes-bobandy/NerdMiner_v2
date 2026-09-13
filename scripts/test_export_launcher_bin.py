@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from export_launcher_bin import ESP_IMAGE_MAGIC, export_app_bin
+from export_launcher_bin import ESP_IMAGE_MAGIC, MERGED_APP_OFFSET, export_app_bin
 
 
 class ExportLauncherBinTests(unittest.TestCase):
@@ -31,8 +31,19 @@ class ExportLauncherBinTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             src = Path(tmp) / "factory.bin"
             dst = Path(tmp) / "out.bin"
-            # Merged factory images start with bootloader bytes, not 0xE9.
             src.write_bytes(b"\x00\x00\x00\x00" + b"\xff" * 64)
+            self.assertEqual(export_app_bin(src, dst), 1)
+            self.assertFalse(dst.exists())
+
+    def test_rejects_s3_merged_factory_that_also_starts_e9(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp) / "factory.bin"
+            dst = Path(tmp) / "out.bin"
+            # ESP32-S3 bootloader @ 0x0 is 0xE9; app is repeated at 0x10000.
+            blob = bytearray(MERGED_APP_OFFSET + 4)
+            blob[0] = ESP_IMAGE_MAGIC
+            blob[MERGED_APP_OFFSET] = ESP_IMAGE_MAGIC
+            src.write_bytes(blob)
             self.assertEqual(export_app_bin(src, dst), 1)
             self.assertFalse(dst.exists())
 

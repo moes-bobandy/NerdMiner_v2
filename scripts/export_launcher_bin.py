@@ -24,6 +24,15 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SRC = REPO_ROOT / ".pio" / "build" / "M5-Cardputer-Adv" / "firmware.bin"
 DEFAULT_DST = REPO_ROOT / "firmware" / "launcher" / "NerdMiner_v2_M5-Cardputer-Adv.bin"
 ESP_IMAGE_MAGIC = 0xE9
+# ESP32-S3 factory merges place the bootloader at 0x0 (also 0xE9) and the
+# app at 0x10000. Reject those so Launcher never gets a full-flash image.
+MERGED_APP_OFFSET = 0x10000
+
+
+def looks_like_merged_factory(data: bytes) -> bool:
+    if len(data) <= MERGED_APP_OFFSET:
+        return False
+    return data[MERGED_APP_OFFSET] == ESP_IMAGE_MAGIC
 
 
 def export_app_bin(src: Path, dst: Path) -> int:
@@ -42,6 +51,16 @@ def export_app_bin(src: Path, dst: Path) -> int:
         print(
             f"error: {src} starts with 0x{magic:02X}, not ESP app magic 0xE9. "
             "Refusing to export a merged factory / bootloader image.",
+            file=sys.stderr,
+        )
+        return 1
+
+    if looks_like_merged_factory(data):
+        print(
+            f"error: {src} looks like a merged factory image "
+            f"(0xE9 at offset 0x{MERGED_APP_OFFSET:X}). "
+            "On ESP32-S3 the bootloader itself starts with 0xE9; flashing that "
+            "via Launcher can overwrite Launcher. Use firmware.bin instead.",
             file=sys.stderr,
         )
         return 1
