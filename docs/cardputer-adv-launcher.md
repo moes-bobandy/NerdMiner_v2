@@ -2,6 +2,8 @@
 
 This fork targets **Cardputer Adv** (Stamp-S3A, ST7789 240×135, TCA8418 keyboard, SD on HSPI CS12/MOSI14/CLK40/MISO39).
 
+Porkchop **dual-screen** (INT nav + EXT ILI9341 mining) is a separate env: `M5-Cardputer-Adv-dual`. Same Launcher rules, different bin. See [cardputer-adv-dual-screen.md](cardputer-adv-dual-screen.md).
+
 Install **[bmorcelli Launcher](https://github.com/bmorcelli/Launcher)** first (`m5stack-cardputer-adv` env / matching web flasher target). Then install NerdMiner as an **app-only** `.bin` from SD or OTA. That keeps Launcher in place.
 
 ## Which file to install
@@ -9,9 +11,13 @@ Install **[bmorcelli Launcher](https://github.com/bmorcelli/Launcher)** first (`
 | File | What it is | Use with Launcher? |
 | --- | --- | --- |
 | `firmware/launcher/NerdMiner_v2_M5-Cardputer-Adv.bin` | ESP **app image**, first byte **`0xE9`** | **Yes** — SD / OTA Install |
+| `firmware/launcher/NerdMiner_v2_M5-Cardputer-Adv-dual.bin` | Dual-screen app image (`M5-Cardputer-Adv-dual`) | **Yes** — SD / OTA Install |
 | `.pio/build/M5-Cardputer-Adv/firmware.bin` | Same app image (PlatformIO output) | **Yes** |
+| `.pio/build/M5-Cardputer-Adv-dual/firmware.bin` | Dual-screen PlatformIO app image | **Yes** |
 | `firmware/<version>/M5-Cardputer-Adv_firmware.bin` | Same app image (post-build copy) | **Yes** |
+| `firmware/<version>/M5-Cardputer-Adv-dual_firmware.bin` | Dual-screen post-build app image | **Yes** |
 | `firmware/<version>/M5-Cardputer-Adv_factory.bin` | Merged flash (bootloader + partitions + app @ 0x0) | **No** — overwrites Launcher |
+| `firmware/<version>/M5-Cardputer-Adv-dual_factory.bin` | Dual-screen factory merge | **No** — overwrites Launcher |
 
 On ESP32-S3 the **bootloader also starts with `0xE9`** and sits at flash offset `0x0`, so a merged factory file can look like an app image if you only check the first byte. Distinguishing checks:
 
@@ -33,6 +39,7 @@ Same style as the rest of this repo (`platformio.ini` env `M5-Cardputer-Adv`):
 
 ```bash
 pio run -e M5-Cardputer-Adv
+pio run -e M5-Cardputer-Adv-dual   # porkchop EXT ILI9341; see dual-screen doc
 ```
 
 After a successful compile, `post_build_merge.py` copies the app image to:
@@ -44,6 +51,7 @@ You can also export (or re-export) the Launcher path without rebuilding:
 
 ```bash
 python3 scripts/export_launcher_bin.py
+python3 scripts/export_launcher_bin.py --env M5-Cardputer-Adv-dual
 ```
 
 The script refuses any file that does not start with `0xE9`.
@@ -73,8 +81,8 @@ Stock upstream Adv support only wired **G0** as a one-button device. This fork d
 
 | Key | Action |
 | --- | --- |
-| Enter, Space, `n`, `.`, `/`, `;` | Next screen |
-| `p`, `,` | Previous screen |
+| Enter, Space, `n`, `.`, `/`, `;`, **Fn+`.`** (Down) | Next screen (down the cyclic list) |
+| `p`, `,`, **Fn+`;`** (Up) | Previous screen |
 | Short tap Backspace (`KEY_BACKSPACE` / HID `0x2A`) | Previous screen |
 | `1`–`4` | Jump to cyclic screen 0–3 |
 | `r` | Rotate display |

@@ -44,6 +44,9 @@ extern DisplayDriver m5stickCPlusDriver;
 extern DisplayDriver t_hmiDisplayDriver;
 extern DisplayDriver sp_kcDisplayDriver;
 extern DisplayDriver ssd1306DisplayDriver;
+#ifdef NERDMINER_DUAL_SCREEN
+extern DisplayDriver ili9341ExtDriver;
+#endif
 
 #define SCREENS_ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
 

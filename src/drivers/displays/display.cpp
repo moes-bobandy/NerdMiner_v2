@@ -48,6 +48,10 @@ DisplayDriver *currentDisplayDriver = &t_qtDisplayDriver;
 DisplayDriver *currentDisplayDriver = &tDisplayV1Driver;
 #endif
 
+#ifdef NERDMINER_DUAL_SCREEN
+#include "nerdMinerDual.h"
+#endif
+
 #ifdef M5STICKC_DISPLAY
 DisplayDriver *currentDisplayDriver = &m5stickCDriver;
 #endif
@@ -72,79 +76,120 @@ DisplayDriver *currentDisplayDriver = &ssd1306DisplayDriver;
 // Initialize the display
 void initDisplay()
 {
+#ifdef NERDMINER_DUAL_SCREEN
+  nerd_dual_init();
+#else
   currentDisplayDriver->initDisplay();
+#endif
 }
 
 // Alternate screen state
 void alternateScreenState()
 {
-  currentDisplayDriver->alternateScreenState();
+  nerd_nav()->alternateScreenState();
 }
 
 // Alternate screen rotation
 void alternateScreenRotation()
 {
-  currentDisplayDriver->alternateScreenRotation();
+  nerd_nav()->alternateScreenRotation();
 }
 
 // Draw the loading screen
 void drawLoadingScreen()
 {
-  currentDisplayDriver->loadingScreen();
+  nerd_nav()->loadingScreen();
 }
 
 // Draw the setup screen
 void drawSetupScreen()
 {
-  currentDisplayDriver->setupScreen();
+  nerd_nav()->setupScreen();
 }
 
 // Reset the current cyclic screen to the first one
 void resetToFirstScreen()
 {
-  currentDisplayDriver->current_cyclic_screen = 0;
+  nerd_nav()->current_cyclic_screen = 0;
 }
+
+#ifdef NERDMINER_DUAL_SCREEN
+static void markNavDirty()
+{
+  nerd_mark_int_nav_dirty();
+}
+#else
+static void markNavDirty() {}
+#endif
 
 // Switches to the next cyclic screen without drawing it
 void switchToNextScreen()
 {
-  currentDisplayDriver->current_cyclic_screen = (currentDisplayDriver->current_cyclic_screen + 1) % currentDisplayDriver->num_cyclic_screens;
+  DisplayDriver *nav = nerd_nav();
+  nav->current_cyclic_screen = (nav->current_cyclic_screen + 1) % nav->num_cyclic_screens;
+  markNavDirty();
 }
 
 // Switches to the previous cyclic screen without drawing it
 void switchToPrevScreen()
 {
-  if (currentDisplayDriver->num_cyclic_screens <= 0) {
+  DisplayDriver *nav = nerd_nav();
+  if (nav->num_cyclic_screens <= 0) {
     return;
   }
-  currentDisplayDriver->current_cyclic_screen =
-      (currentDisplayDriver->current_cyclic_screen + currentDisplayDriver->num_cyclic_screens - 1) %
-      currentDisplayDriver->num_cyclic_screens;
+  nav->current_cyclic_screen =
+      (nav->current_cyclic_screen + nav->num_cyclic_screens - 1) %
+      nav->num_cyclic_screens;
+  markNavDirty();
 }
 
 // Jump to a cyclic screen by index (0-based). Out-of-range values are ignored.
 void switchToScreen(int index)
 {
-  if (index < 0 || index >= currentDisplayDriver->num_cyclic_screens) {
+  DisplayDriver *nav = nerd_nav();
+  if (index < 0 || index >= nav->num_cyclic_screens) {
     return;
   }
-  currentDisplayDriver->current_cyclic_screen = index;
+  nav->current_cyclic_screen = index;
+  markNavDirty();
 }
 
 // Draw the current cyclic screen
 void drawCurrentScreen(unsigned long mElapsed)
 {
-  currentDisplayDriver->cyclic_screens[currentDisplayDriver->current_cyclic_screen](mElapsed);
+  DisplayDriver *nav = nerd_nav();
+  DisplayDriver *mining = nerd_mining();
+  int idx = nav->current_cyclic_screen;
+  if (mining->num_cyclic_screens <= 0) {
+    return;
+  }
+  if (idx < 0 || idx >= mining->num_cyclic_screens) {
+    idx = 0;
+  }
+#ifdef NERDMINER_DUAL_SCREEN
+  // INT cyclic menu first so nav does not wait on the slow EXT mining paint.
+  if (nerd_ext_available()) {
+    nerd_draw_int_nav_hud(idx, 0);
+  }
+  nerd_ext_begin_frame();
+#endif
+  mining->cyclic_screens[idx](mElapsed);
+#ifdef NERDMINER_DUAL_SCREEN
+  nerd_ext_end_frame();
+#endif
 }
 
 // Animate the current cyclic screen
 void animateCurrentScreen(unsigned long frame)
 {
-  currentDisplayDriver->animateCurrentScreen(frame);
+#ifdef NERDMINER_DUAL_SCREEN
+  nerd_poll_int_nav();
+#endif
+  nerd_nav()->animateCurrentScreen(frame);
 }
 
 // Do LED stuff
 void doLedStuff(unsigned long frame)
 {
-  currentDisplayDriver->doLedStuff(frame);
+  nerd_nav()->doLedStuff(frame);
 }
