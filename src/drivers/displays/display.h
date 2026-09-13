@@ -5,6 +5,13 @@
 
 extern DisplayDriver *currentDisplayDriver;
 
+#ifdef NERDMINER_DUAL_SCREEN
+#include "nerdMinerDual.h"
+#else
+inline DisplayDriver *nerd_nav() { return currentDisplayDriver; }
+inline DisplayDriver *nerd_mining() { return currentDisplayDriver; }
+#endif
+
 void initDisplay();
 void alternateScreenState();
 void alternateScreenRotation();
