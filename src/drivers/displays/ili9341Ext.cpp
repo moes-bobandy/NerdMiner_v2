@@ -42,12 +42,12 @@
 #define ILI9341_MADCTL_MV  0x20
 #define ILI9341_MADCTL_BGR 0x08
 
-// HWbot / Contract v2.1: boot-only MADCTL MX|MY|MV|BGR = 0xE8.
-// Field (dirt porkchop): MY|MV|BGR (0xA8) was still L/R mirrored.
+// Contract v2.2: boot-only MADCTL MV|BGR = 0x28 (no MX, no MY).
+// Field FAIL: EXT still mirrored/reversed on tip 976c96a with boot 0xE8.
 // Keep BGR. Write once in sendInit — do not rewrite MADCTL mid-run.
-// Override: -DEXT_TFT_MADCTL=0xA8 (or another ILI9341 MADCTL byte).
+// A/B override: -DEXT_TFT_MADCTL=  (rollbacks: 0xE8, 0xA8, 0x68).
 #ifndef EXT_TFT_MADCTL
-#define EXT_TFT_MADCTL (ILI9341_MADCTL_MX | ILI9341_MADCTL_MY | ILI9341_MADCTL_MV | ILI9341_MADCTL_BGR)
+#define EXT_TFT_MADCTL (ILI9341_MADCTL_MV | ILI9341_MADCTL_BGR)
 #endif
 
 #ifndef EXT_TFT_SPI_HZ

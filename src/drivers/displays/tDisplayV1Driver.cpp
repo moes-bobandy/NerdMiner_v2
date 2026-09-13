@@ -18,6 +18,20 @@ OpenFontRender render;
 TFT_eSPI tft = TFT_eSPI();                  // Invoke library, pins defined in User_Setup.h
 TFT_eSprite background = TFT_eSprite(&tft); // Invoke library sprite
 
+#ifdef NERDMINER_DUAL_SCREEN
+static bool s_skipIntPush = false;
+#endif
+
+static void tDisplayV1FinishFrame(void)
+{
+#ifdef NERDMINER_DUAL_SCREEN
+  if (s_skipIntPush) {
+    return;
+  }
+#endif
+  background.pushSprite(0, 0);
+}
+
 void tDisplay_Init(void)
 {
   tft.init();
@@ -94,7 +108,7 @@ void tDisplay_MinerScreen(unsigned long mElapsed)
   render.rdrawString(data.currentTime.c_str(), 215, 1, TFT_BLACK);
 
   // Push prepared background to screen
-  background.pushSprite(0, 0);
+  tDisplayV1FinishFrame();
 }
 
 void tDisplay_ClockScreen(unsigned long mElapsed)
@@ -132,7 +146,7 @@ void tDisplay_ClockScreen(unsigned long mElapsed)
   background.drawString(data.currentTime.c_str(), 70, 25, GFXFF);
 
   // Push prepared background to screen
-  background.pushSprite(0, 0);
+  tDisplayV1FinishFrame();
 }
 
 void tDisplay_GlobalHashScreen(unsigned long mElapsed)
@@ -191,7 +205,7 @@ void tDisplay_GlobalHashScreen(unsigned long mElapsed)
   background.drawString(data.remainingBlocks.c_str(), 55, 125, FONT2);
 
   // Push prepared background to screen
-  background.pushSprite(0, 0);
+  tDisplayV1FinishFrame();
 }
 
 void tDisplay_BTCprice(unsigned long mElapsed)
@@ -229,7 +243,7 @@ void tDisplay_BTCprice(unsigned long mElapsed)
   background.drawString(data.btcPrice.c_str(), 82, 50, GFXFF);
 
   // Push prepared background to screen
-  background.pushSprite(0, 0);
+  tDisplayV1FinishFrame();
 }
 
 void tDisplay_LoadingScreen(void)
@@ -297,6 +311,29 @@ void tDisplayV1PushStockChrome(TFT_eSprite *spr, int screenIndex)
 #endif
 
 CyclicScreenFunction tDisplayCyclicScreens[] = {tDisplay_MinerScreen, tDisplay_ClockScreen, tDisplay_GlobalHashScreen, tDisplay_BTCprice};
+
+#ifdef NERDMINER_DUAL_SCREEN
+void tDisplayV1ComposeCyclic(int screenIndex, unsigned long mElapsed, bool pushToInt)
+{
+  if (screenIndex < 0 || screenIndex >= (int)SCREENS_ARRAY_SIZE(tDisplayCyclicScreens)) {
+    screenIndex = 0;
+  }
+  s_skipIntPush = !pushToInt;
+  tDisplayCyclicScreens[screenIndex](mElapsed);
+  s_skipIntPush = false;
+}
+
+const uint16_t *tDisplayV1SpriteBits(uint16_t *w, uint16_t *h)
+{
+  if (w) {
+    *w = WIDTH;
+  }
+  if (h) {
+    *h = HEIGHT;
+  }
+  return (const uint16_t *)background.getPointer();
+}
+#endif
 
 DisplayDriver tDisplayV1Driver = {
     tDisplay_Init,

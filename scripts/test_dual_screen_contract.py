@@ -126,8 +126,10 @@ class DualScreenContractTests(unittest.TestCase):
         self.assertIn("BEST DIFFICULTY", driver)
         self.assertIn("32BITS SHARES", driver)
         self.assertIn("VALID BLOCKS", driver)
-        self.assertIn("tDisplayV1StockFrame", driver)
-        self.assertIn("blitStockArt", driver)
+        self.assertIn("tDisplayV1ComposeCyclic", driver)
+        self.assertIn("blitLiveStock", driver)
+        self.assertNotIn("C_ORANGE", driver)
+        self.assertNotIn("0xFD20", driver)
         self.assertNotIn("static void fillContentBand", driver)
         # Full clear lives only in enterExtScreen (screen-index change).
         self.assertEqual(driver.count("ili9341ExtFillScreen("), 1)
@@ -148,12 +150,16 @@ class DualScreenContractTests(unittest.TestCase):
         self.assertNotIn("while (count--)", low)
         self.assertIn("ili9341ExtBeginFrame", low)
         self.assertIn("while (s_frame > 0)", low)
-        # v2.1: boot-only MX|MY|MV|BGR = 0xE8. Field: 0xA8 was still L/R mirrored.
+        # v2.2: boot-only MV|BGR = 0x28 (no MX, no MY). Field FAIL: 0xE8 still mirrored.
         self.assertIn(
-            "ILI9341_MADCTL_MX | ILI9341_MADCTL_MY | ILI9341_MADCTL_MV | ILI9341_MADCTL_BGR",
+            "#define EXT_TFT_MADCTL (ILI9341_MADCTL_MV | ILI9341_MADCTL_BGR)",
             low,
         )
         self.assertEqual(low.count("writeCommand(ILI9341_MADCTL)"), 1)
+        self.assertNotIn(
+            "ILI9341_MADCTL_MX | ILI9341_MADCTL_MY | ILI9341_MADCTL_MV | ILI9341_MADCTL_BGR",
+            low,
+        )
         self.assertNotIn(
             "writeData(ILI9341_MADCTL_MX | ILI9341_MADCTL_MV | ILI9341_MADCTL_BGR)",
             low,
@@ -171,6 +177,8 @@ class DualScreenContractTests(unittest.TestCase):
         self.assertNotIn("&& mElapsed == 0", dual)
         self.assertIn("DigitalNumbers", read("src/drivers/displays/tDisplayV1Driver.cpp"))
         self.assertIn("0xDEDB", read("src/drivers/displays/tDisplayV1Driver.cpp"))
+        self.assertIn("tDisplayV1ComposeCyclic", read("src/drivers/displays/tDisplayV1Driver.cpp"))
+        self.assertIn("s_skipIntPush", read("src/drivers/displays/tDisplayV1Driver.cpp"))
         self.assertNotIn("fillSprite(", dual)
         self.assertNotIn("images_240_135.h", dual)
         self.assertNotIn("getMiningData", dual)
@@ -206,10 +214,18 @@ class DualScreenContractTests(unittest.TestCase):
         self.assertIn("320", docs)
         self.assertIn("wipe", docs.lower())
         self.assertIn("Field retest", docs)
+        self.assertIn("0x28", docs)
+        self.assertIn("MV|BGR", docs)
         self.assertIn("0xE8", docs)
+        self.assertIn("0xA8", docs)
+        self.assertIn("0x68", docs)
         self.assertIn("MX|MY|MV|BGR", docs)
         self.assertIn("BLOCK TEMPLATES", docs)
+        self.assertIn("v2.2", docs)
+        self.assertIn("v2.2b", docs)
         self.assertIn("v2.1b", docs)
+        self.assertIn("DigitalNumbers", docs)
+        self.assertIn("C_ORANGE", docs)
         self.assertIn("not identical clones", docs)
         self.assertIn("nav/status only", docs)
         self.assertIn("mining goods", docs)

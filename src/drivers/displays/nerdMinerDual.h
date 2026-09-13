@@ -22,6 +22,10 @@ void nerd_ext_end_frame();
 class TFT_eSprite;
 void tDisplayV1PushStockChrome(TFT_eSprite *spr, int screenIndex);
 void tDisplayV1StockFrame(int screenIndex, const uint16_t **bits, uint16_t *w, uint16_t *h);
+// Compose stock V1 (MinerScreen + DigitalNumbers / 0xDEDB) into the INT sprite.
+// pushToInt=false leaves ST7789 unchanged — EXT scale-blits the buffer.
+void tDisplayV1ComposeCyclic(int screenIndex, unsigned long mElapsed, bool pushToInt);
+const uint16_t *tDisplayV1SpriteBits(uint16_t *w, uint16_t *h);
 
 void nerd_dual_init();
 void nerd_draw_int_nav_hud(int screenIndex, unsigned long mElapsed);
