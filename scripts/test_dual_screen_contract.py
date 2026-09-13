@@ -73,6 +73,40 @@ class DualScreenContractTests(unittest.TestCase):
         self.assertIn("digitalWrite(EXT_TFT_CS, HIGH)", kb)
         self.assertIn("0x34", read("src/drivers/devices/m5CardputerAdv.h"))
 
+    def test_ext_screens_do_not_fillscreen_every_tick(self) -> None:
+        driver = read("src/drivers/displays/ili9341ExtDriver.cpp")
+        self.assertIn("enterExtScreen", driver)
+        self.assertIn("s_extScreen", driver)
+        self.assertIn("takeField", driver)
+        self.assertIn("dirty7Seg", driver)
+        self.assertIn("dirtyStat", driver)
+        self.assertNotIn("static void fillContentBand", driver)
+        # Full clear lives only in enterExtScreen (screen-index change).
+        self.assertEqual(driver.count("ili9341ExtFillScreen("), 1)
+        for name in (
+            "extMinerScreen",
+            "extClockScreen",
+            "extGlobalScreen",
+            "extPriceScreen",
+        ):
+            body = driver.split(f"static void {name}", 1)[1].split("static void ", 1)[0]
+            self.assertIn("enterExtScreen(", body)
+            self.assertNotIn("ili9341ExtFillScreen", body)
+
+        low = read("src/drivers/displays/ili9341Ext.cpp")
+        self.assertIn("writeBytes", low)
+        self.assertIn("extSpi.begin(EXT_TFT_SCK, EXT_TFT_MISO, EXT_TFT_MOSI, -1)", low)
+        self.assertIn("sdCsIdle", low)
+        self.assertNotIn("while (count--)", low)
+        self.assertIn("ili9341ExtBeginFrame", low)
+        self.assertIn("while (s_frame > 0)", low)
+        dual = read("src/drivers/displays/nerdMinerDual.cpp")
+        self.assertIn("GRAM is retained", dual)
+        self.assertIn("nerd_ext_begin_frame", dual)
+        disp = read("src/drivers/displays/display.cpp")
+        self.assertIn("nerd_ext_begin_frame()", disp)
+        self.assertIn("nerd_ext_end_frame()", disp)
+
     def test_docs_and_launcher_recipe(self) -> None:
         docs = read("docs/cardputer-adv-dual-screen.md")
         self.assertIn("nerd_nav()", docs)
@@ -82,6 +116,8 @@ class DualScreenContractTests(unittest.TestCase):
         self.assertIn("factory", docs.lower())
         self.assertTrue(re.search(r"LoRa|Hydra", docs))
         self.assertIn("320", docs)
+        self.assertIn("wipe", docs.lower())
+        self.assertIn("Field retest", docs)
         launcher = read("docs/cardputer-adv-launcher.md")
         self.assertIn("M5-Cardputer-Adv-dual", launcher)
 

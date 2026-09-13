@@ -9,6 +9,8 @@
 
 bool ili9341ExtBegin();
 void ili9341ExtQuiesce();
+void ili9341ExtBeginFrame();
+void ili9341ExtEndFrame();
 bool ili9341ExtReady();
 uint32_t ili9341ExtId();
 

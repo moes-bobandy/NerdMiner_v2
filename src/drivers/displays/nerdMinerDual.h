@@ -13,7 +13,10 @@ DisplayDriver *nerd_mining();
 bool nerd_ext_available();
 
 // Hold EXT CS HIGH (GPIO5). Safe before EXT init and from SD ctor.
+// Must not run mid-frame (waits until ili9341ExtEndFrame).
 void nerd_quiesce_ext();
+void nerd_ext_begin_frame();
+void nerd_ext_end_frame();
 
 void nerd_dual_init();
 void nerd_draw_int_nav_hud(int screenIndex, unsigned long mElapsed);
