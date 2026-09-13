@@ -127,12 +127,18 @@ class DualScreenContractTests(unittest.TestCase):
         self.assertIn("32BITS SHARES", driver)
         self.assertIn("VALID BLOCKS", driver)
         self.assertIn("tDisplayV1ComposeCyclic", driver)
-        self.assertIn("blitLiveStock", driver)
+        self.assertIn("blitStockOnce", driver)
+        self.assertNotIn("blitLiveStock", driver)
         self.assertNotIn("C_ORANGE", driver)
         self.assertNotIn("0xFD20", driver)
         self.assertNotIn("static void fillContentBand", driver)
-        # Full clear lives only in enterExtScreen (screen-index change).
+        # Full clear + one stock compose live only in enterExtScreen (index change).
         self.assertEqual(driver.count("ili9341ExtFillScreen("), 1)
+        self.assertEqual(driver.count("blitStockOnce("), 2)  # def + enterExtScreen call
+        enter = driver.split("static void enterExtScreen", 1)[1].split("static void ", 1)[0]
+        self.assertIn("ili9341ExtFillScreen", enter)
+        self.assertIn("blitStockOnce", enter)
+        self.assertIn("s_extScreen == id", enter)
         for name in (
             "extMinerScreen",
             "extClockScreen",
@@ -142,6 +148,8 @@ class DualScreenContractTests(unittest.TestCase):
             body = driver.split(f"static void {name}", 1)[1].split("static void ", 1)[0]
             self.assertIn("enterExtScreen(", body)
             self.assertNotIn("ili9341ExtFillScreen", body)
+            self.assertNotIn("blitStockOnce", body)
+            self.assertNotIn("tDisplayV1ComposeCyclic", body)
 
         low = read("src/drivers/displays/ili9341Ext.cpp")
         self.assertIn("writeBytes", low)
@@ -151,7 +159,9 @@ class DualScreenContractTests(unittest.TestCase):
         self.assertIn("ili9341ExtBeginFrame", low)
         self.assertIn("while (s_frame > 0)", low)
         # v2.3: boot-only MY|MV|BGR|MH = 0xAC. Field FAIL: 0x28 upside-down only.
+        self.assertIn("#define ILI9341_MADCTL_ML  0x10", low)
         self.assertIn("#define ILI9341_MADCTL_MH  0x04", low)
+        self.assertIn("0x38", low)
         self.assertIn(
             "#define EXT_TFT_MADCTL (ILI9341_MADCTL_MY | ILI9341_MADCTL_MV | ILI9341_MADCTL_BGR | ILI9341_MADCTL_MH)",
             low,
@@ -222,6 +232,8 @@ class DualScreenContractTests(unittest.TestCase):
         self.assertIn("0xE8", docs)
         self.assertIn("0xA8", docs)
         self.assertIn("0x68", docs)
+        self.assertIn("0x38", docs)
+        self.assertIn("MV|ML|BGR", docs)
         self.assertIn("MX|MY|MV|BGR", docs)
         self.assertIn("BLOCK TEMPLATES", docs)
         self.assertIn("v2.3", docs)

@@ -40,6 +40,7 @@
 #define ILI9341_MADCTL_MY  0x80
 #define ILI9341_MADCTL_MX  0x40
 #define ILI9341_MADCTL_MV  0x20
+#define ILI9341_MADCTL_ML  0x10
 #define ILI9341_MADCTL_BGR 0x08
 #define ILI9341_MADCTL_MH  0x04
 
@@ -48,6 +49,7 @@
 // (not L/R mirrored). Prior FAIL: 0xE8 still mirrored/reversed; 0xA8 L/R mirrored.
 // Keep BGR. Write once in sendInit — do not rewrite MADCTL mid-run.
 // A/B override: -DEXT_TFT_MADCTL=  (rollbacks: 0x28, 0xE8, 0xA8, 0x68).
+// If L/R returns after 0xAC: try 0x38 (MV|ML|BGR).
 #ifndef EXT_TFT_MADCTL
 #define EXT_TFT_MADCTL (ILI9341_MADCTL_MY | ILI9341_MADCTL_MV | ILI9341_MADCTL_BGR | ILI9341_MADCTL_MH)
 #endif

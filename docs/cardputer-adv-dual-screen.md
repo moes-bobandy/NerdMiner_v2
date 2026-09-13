@@ -78,7 +78,7 @@ Optional flags on the dual env:
 | --- | --- |
 | `-DNERDMINER_DUAL_ASSUME_EXT=1` | Default. Porkchop pin list has no EXT MISO, so ID probe is best-effort. |
 | `-DNERDMINER_DUAL_FORCE_INT=1` | Force INT-only fallback (no EXT traffic). |
-| `-DEXT_TFT_MADCTL=0xE8` | Override boot MADCTL for A/B. Default is `MY|MV|BGR|MH` = `0xAC`. Rollbacks: `0x28`, `0xE8`, `0xA8`, `0x68`. |
+| `-DEXT_TFT_MADCTL=0xE8` | Override boot MADCTL for A/B. Default is `MY|MV|BGR|MH` = `0xAC`. Rollbacks: `0x28`, `0xE8`, `0xA8`, `0x68`. If L/R returns after `0xAC`, try `0x38` (`MV|ML|BGR`). |
 
 ## Launcher (app-only `0xE9`)
 
@@ -141,7 +141,7 @@ On the dirt unit (porkchop EXT wired, dual bin, SD present):
 
 Same Launcher app-only flash as above. Wipe (v1) must stay **PASS**. Then:
 
-1. **EXT orientation (v2.3):** MINING/CLOCK/NETWORK/PRICE on the porkchop must read left-to-right and right-side-up, not mirrored, reversed, or upside-down. MADCTL is boot-only `0xAC` (`MY|MV|BGR|MH`). Field FAIL on tip `e54ac1c` with boot `0x28` (`MV|BGR`) — image upside-down only (not L/R mirrored). Earlier FAIL on tip `976c96a` with boot `0xE8` (`MX|MY|MV|BGR`) — still mirrored/reversed. Prior field photo on `0xA8` was also L/R mirrored. A/B rollbacks: `-DEXT_TFT_MADCTL=0x28` / `0xE8` / `0xA8` / `0x68`.
+1. **EXT orientation (v2.3):** MINING/CLOCK/NETWORK/PRICE on the porkchop must read left-to-right and right-side-up, not mirrored, reversed, or upside-down. MADCTL is boot-only `0xAC` (`MY|MV|BGR|MH`). Field FAIL on tip `e54ac1c` with boot `0x28` (`MV|BGR`) — image upside-down only (not L/R mirrored). Earlier FAIL on tip `976c96a` with boot `0xE8` (`MX|MY|MV|BGR`) — still mirrored/reversed. Prior field photo on `0xA8` was also L/R mirrored. A/B rollbacks: `-DEXT_TFT_MADCTL=0x28` / `0xE8` / `0xA8` / `0x68`. If L/R returns after `0xAC`, try `-DEXT_TFT_MADCTL=0x38` (`MV|ML|BGR`).
 2. **Down key:** **Fn+`.`** moves MINING → CLOCK → NETWORK → PRICE. Bare `;` / `.` still next (v1.2). **Fn+`;`** prev. `p` / `,` / Backspace / G0 unchanged.
 3. **INT lag / dirty-only:** After nav, INT updates within about one monitor tick (~100 ms). No 1 Hz full V1 goods paint. No per-tick `fillSprite`.
 4. **Stock chrome (v2.1b / v2.2b):** INT looks like stock single-screen NerdMiner (logo, clock, BLOCK TEMPLATES / BEST DIFFICULTY / 32BITS SHARES / VALID BLOCKS, KH/s, uptime, gauge, DigitalNumbers / `0xDEDB`). No `C_ORANGE` / custom yellow HUD. EXT composes the same V1 screens (live `mElapsed`) and scale-blits them, plus a `0xDEDB` goods band. Not identical clones.
@@ -155,5 +155,6 @@ If a wipe remains, note whether it is every second (redraw) or only around SD/bo
 - **SD + EXT:** If EXT CS is left low, SD enumerates fail. Boot always idles GPIO5 HIGH; `loadConfigFile` / `initSDcard` quiesce EXT first.
 - **LoRa / Hydra on the Grove/hat pins:** Do not stack with the porkchop.
 - **Color order:** Cheap ILI9341 modules may swap R/B. Driver uses BGR MADCTL; swap in `ili9341Ext.cpp` if a panel looks inverted.
-- **EXT orientation (v2.3):** MADCTL is written **once at boot**: `MY|MV|BGR|MH` = `0xAC`. Field FAIL on `0x28` (upside-down only, not L/R mirrored). Earlier `0xE8` still mirrored/reversed; `0xA8` was L/R mirrored. BGR kept. Do not rewrite mid-run. Override `-DEXT_TFT_MADCTL=` for A/B; rollbacks are `0x28`, `0xE8`, `0xA8`, `0x68`.
+- **EXT orientation (v2.3):** MADCTL is written **once at boot**: `MY|MV|BGR|MH` = `0xAC`. Field FAIL on `0x28` (upside-down only, not L/R mirrored). Earlier `0xE8` still mirrored/reversed; `0xA8` was L/R mirrored. BGR kept. Do not rewrite mid-run. Override `-DEXT_TFT_MADCTL=` for A/B; rollbacks are `0x28`, `0xE8`, `0xA8`, `0x68`. If L/R returns, try `0x38` (`MV|ML|BGR`).
+- **EXT switch (v2.3+):** On cyclic index change only: one `FillScreen` + one stock V1 compose/scale-blit, then goods-band labels once. Steady 1 Hz ticks are dirty-field goods only — no second full compose or multi-pass clear.
 - **Keyboard / Launcher:** Dual env still compiles TCA8418 v1.2 and the app-only export. Stock env is the safe path if you only want PR #1 behavior.
