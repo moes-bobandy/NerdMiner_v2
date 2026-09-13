@@ -256,25 +256,13 @@ void tDisplay_DoLedStuff(unsigned long frame)
 #ifdef NERDMINER_DUAL_SCREEN
 void tDisplayV1PushStockChrome(TFT_eSprite *spr, int screenIndex)
 {
-  // Shared PROGMEM bitmaps — do not include images_240_135.h from another TU
-  // (const arrays have internal linkage and would duplicate ~380 KB).
+  // INT nav chrome base is MinerScreen only (ARCH v2). Shared PROGMEM —
+  // do not include images_240_135.h from another TU.
+  (void)screenIndex;
   if (!spr) {
     return;
   }
-  switch (screenIndex) {
-  case 1:
-    spr->pushImage(0, 0, minerClockWidth, minerClockHeight, minerClockScreen);
-    break;
-  case 2:
-    spr->pushImage(0, 0, globalHashWidth, globalHashHeight, globalHashScreen);
-    break;
-  case 3:
-    spr->pushImage(0, 0, priceScreenWidth, priceScreenHeight, priceScreen);
-    break;
-  default:
-    spr->pushImage(0, 0, MinerWidth, MinerHeight, MinerScreen);
-    break;
-  }
+  spr->pushImage(0, 0, MinerWidth, MinerHeight, MinerScreen);
 }
 #endif
 

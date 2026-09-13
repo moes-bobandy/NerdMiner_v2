@@ -70,8 +70,8 @@ class DualScreenContractTests(unittest.TestCase):
         self.assertIn("key == 'p' || key == ','", kb)
         self.assertIn("KEY_BACKSPACE", kb)
         self.assertIn("KEY_DOWN", kb)
-        self.assertIn("ADV_RAW_DOWN", kb)
-        self.assertIn("58", kb)
+        self.assertIn("Fn+.", kb)
+        self.assertIn("g_fn", kb)
         self.assertIn("(keycode - 1)", kb)
         self.assertIn("switchToNextScreen()", kb)
         self.assertIn("EXT_TFT_CS", kb)
@@ -114,7 +114,8 @@ class DualScreenContractTests(unittest.TestCase):
         self.assertEqual(map_raw(54), (3, 10))  # ','
         self.assertEqual(map_raw(64), (3, 12))  # '/'
         kb = read("src/drivers/input/tca8418Keyboard.cpp")
-        self.assertIn("KEY_DOWN, '/', ' '", kb)
+        self.assertIn("',', '.', '/', ' '", kb)
+        self.assertIn("key == '.' || key == KEY_DOWN", kb)
 
     def test_ext_screens_do_not_fillscreen_every_tick(self) -> None:
         driver = read("src/drivers/displays/ili9341ExtDriver.cpp")
@@ -143,8 +144,12 @@ class DualScreenContractTests(unittest.TestCase):
         self.assertNotIn("while (count--)", low)
         self.assertIn("ili9341ExtBeginFrame", low)
         self.assertIn("while (s_frame > 0)", low)
-        # Rotation 1 landscape (MV|BGR). MX|MV|BGR is mirrored rot-5 — field fail.
-        self.assertIn("ILI9341_MADCTL_MV | ILI9341_MADCTL_BGR", low)
+        # HWbot: boot-only MY|MV|BGR = 0xA8. Not mirrored MX|MV|BGR (0x68).
+        self.assertIn(
+            "ILI9341_MADCTL_MY | ILI9341_MADCTL_MV | ILI9341_MADCTL_BGR",
+            low,
+        )
+        self.assertEqual(low.count("writeCommand(ILI9341_MADCTL)"), 1)
         self.assertNotIn(
             "writeData(ILI9341_MADCTL_MX | ILI9341_MADCTL_MV | ILI9341_MADCTL_BGR)",
             low,
@@ -152,12 +157,18 @@ class DualScreenContractTests(unittest.TestCase):
         dual = read("src/drivers/displays/nerdMinerDual.cpp")
         self.assertIn("GRAM is retained", dual)
         self.assertIn("nerd_ext_begin_frame", dual)
-        self.assertIn("pushStockCyclicChrome", dual)
         self.assertIn("tDisplayV1PushStockChrome", dual)
+        self.assertIn("OpenFontRender", dual)
+        self.assertIn("0xDEDB", dual)
+        self.assertIn("DigitalNumbers", dual + read("src/drivers/displays/tDisplayV1Driver.cpp"))
+        self.assertIn("HASHING", dual)
+        self.assertNotIn("fillSprite(", dual)
         self.assertNotIn("images_240_135.h", dual)
+        self.assertNotIn("getMiningData", dual)
         v1 = read("src/drivers/displays/tDisplayV1Driver.cpp")
         self.assertIn("tDisplayV1PushStockChrome", v1)
         self.assertIn("MinerScreen", v1)
+        self.assertNotIn("minerClockScreen", v1.split("tDisplayV1PushStockChrome")[1].split("CyclicScreenFunction")[0])
         self.assertIn("s_intDirty", dual)
         self.assertNotIn("NAV  INT ST7789", dual)
         disp = read("src/drivers/displays/display.cpp")

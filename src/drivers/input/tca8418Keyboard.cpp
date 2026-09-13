@@ -40,14 +40,13 @@
 #define ADV_RAW_DOWN  58
 #define ADV_RAW_RIGHT 64
 
-// Adv 4x14: printed ↓ sits on the '.' position (raw 58). Emit KEY_DOWN so
-// Down navigates down (+1). ';' stays next (contract v1.2). uint8_t map
-// avoids signed-char KEY_FN/KEY_DOWN compare bugs.
+// Adv 4x14 value_first. Arrows are Fn-layer (HWbot): Fn+. = Down, Fn+; = Up.
+// Bare ';' / '.' stay v1.2 next. uint8_t avoids signed-char KEY_FN compares.
 static const uint8_t kKeyMap[4][14] = {
     {'`', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', KEY_BACKSPACE},
     {KEY_TAB, 'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', '[', ']', '\\'},
     {KEY_FN, KEY_SHIFT, 'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';', '\'', KEY_ENTER},
-    {KEY_CTRL, KEY_OPT, KEY_ALT, 'z', 'x', 'c', 'v', 'b', 'n', 'm', ',', KEY_DOWN, '/', ' '},
+    {KEY_CTRL, KEY_OPT, KEY_ALT, 'z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/', ' '},
 };
 
 static bool g_available = false;
@@ -131,8 +130,7 @@ static void dispatchKey(uint8_t key)
     }
     g_lastNavMs = now;
 
-    // Down / right / ';' (contract v1.2) / . / / / enter / space / n = next.
-    // KEY_DOWN is the printed Adv ↓ (raw 58). Delta is +1 (down the cyclic list).
+    // Bare ';' / '.' stay v1.2 next. KEY_DOWN (Fn+.) is also next (+1).
     if (key == KEY_DOWN || key == KEY_RIGHT || key == KEY_ENTER ||
         key == ' ' || key == 'n' || key == '.' || key == '/' || key == ';') {
         Serial.println(key == KEY_DOWN ? F("Cardputer KB: down / next screen")
@@ -210,16 +208,17 @@ static void handleEvent(uint8_t raw)
         return;
     }
 
-    // Fn layer restores punctuation on the printed arrow keys.
+    // HWbot: Adv arrows are Fn-layer. No extra GPIO.
+    // Fn+. = Down → next; Fn+; = Up → prev. Fn+, left / Fn+/ right optional.
     if (g_fn) {
-        if (key == KEY_UP) {
-            key = ';';
-        } else if (key == KEY_LEFT) {
-            key = ',';
-        } else if (key == KEY_DOWN) {
-            key = '.';
-        } else if (key == KEY_RIGHT) {
-            key = '/';
+        if (key == '.' || key == KEY_DOWN) {
+            key = KEY_DOWN;
+        } else if (key == ';' || key == KEY_UP) {
+            key = KEY_UP;
+        } else if (key == ',') {
+            key = KEY_LEFT;
+        } else if (key == '/') {
+            key = KEY_RIGHT;
         }
     }
 

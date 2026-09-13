@@ -5,6 +5,8 @@
 #include "nerdMinerDual.h"
 #include "ili9341Ext.h"
 #include <TFT_eSPI.h>
+#include "OpenFontRender.h"
+#include "media/Free_Fonts.h"
 #include "monitor.h"
 #include "version.h"
 #include "drivers/devices/device.h"
@@ -17,6 +19,7 @@ extern DisplayDriver tDisplayV1Driver;
 extern DisplayDriver ili9341ExtDriver;
 extern TFT_eSPI tft;
 extern TFT_eSprite background;
+extern OpenFontRender render;
 extern monitor_data mMonitor;
 
 static bool g_ext = false;
@@ -72,6 +75,7 @@ void nerd_dual_init()
 }
 
 static volatile bool s_intDirty = true;
+static bool s_chrome = false;
 static int s_intDrawn = -1;
 static uint8_t s_intStatus = 0xFF;
 
@@ -93,32 +97,42 @@ static const char *intStatusLabel(uint16_t *color)
     return "WAIT";
 }
 
-static void pushStockCyclicChrome(int screenIndex)
+static void pushMinerHeaderChrome(void)
 {
-    // Same 240x135 bitmaps as stock tDisplayV1 cyclic screens — INT is the
-    // menu/chooser, not a dual-HUD list. Live mining goods stay on EXT.
-    tDisplayV1PushStockChrome(&background, screenIndex);
+    // MinerScreen as chrome base, cropped to the stock header. Empty
+    // hashrate/stat fields are covered — live goods stay on EXT.
+    tDisplayV1PushStockChrome(&background, 0);
+    background.fillRect(0, 22, 240, 113, TFT_BLACK);
+    background.drawFastHLine(0, 22, 240, 0xDEDB);
+    s_chrome = true;
 }
 
-static void drawStockMenuStrip(int screenIndex, const char *status, uint16_t statusColor)
+static void dirtyDrawNav(int screenIndex, const char *status, uint16_t statusColor)
 {
     static const char *names[] = {"MINING", "CLOCK", "NETWORK", "PRICE"};
-    background.fillRect(0, 109, 240, 26, 0x2104);
-    background.drawFastHLine(0, 109, 240, 0xDEDB);
+
+    background.fillRect(8, 28, 224, 82, TFT_BLACK);
+    background.setFreeFont(FF23);
+    background.setTextSize(1);
     background.setTextDatum(TL_DATUM);
+    background.setTextColor(0xDEDB, TFT_BLACK);
+    background.drawString(names[screenIndex], 10, 34, GFXFF);
+
+    char num[2] = {(char)('1' + screenIndex), 0};
+    render.setFontSize(28);
+    render.setFontColor(0xDEDB);
+    render.rdrawString(num, 226, 78, 0xDEDB);
+
+    background.setFreeFont(FSSB9);
+    background.setTextColor(statusColor, TFT_BLACK);
+    background.drawString(status, 12, 78, GFXFF);
+
+    background.setFreeFont(NULL);
     background.setTextFont(2);
     background.setTextSize(1);
-    background.setTextColor(0xDEDB, 0x2104);
-    background.drawString(names[screenIndex], 6, 111);
-    for (int i = 0; i < 4; ++i) {
-        background.fillCircle(88 + i * 12, 118, 3, (i == screenIndex) ? 0xFD20 : 0x4A49);
-    }
-    background.setTextDatum(TR_DATUM);
-    background.setTextColor(statusColor, 0x2104);
-    background.drawString(status, 234, 111);
-    background.setTextDatum(TL_DATUM);
-    background.setTextColor(0x9C92, 0x2104);
-    background.drawString(";/dn next  p/, prev", 6, 123);
+    background.setTextColor(0x9C92, TFT_BLACK);
+    background.fillRect(0, 118, 240, 17, TFT_BLACK);
+    background.drawString(";/. next  Fn+. dn  p prev", 8, 118);
 }
 
 void nerd_mark_int_nav_dirty()
@@ -148,18 +162,15 @@ void nerd_draw_int_nav_hud(int screenIndex, unsigned long mElapsed)
     const bool viewChanged = (screenIndex != s_intDrawn);
     const bool statusChanged = (statusId != s_intStatus);
 
-    // Throttle: skip identical 1 Hz ticks. Full stock bitmap only on view change.
+    // Dirty only: index / status / nav. No per-tick fillSprite.
     if (!s_intDirty && !viewChanged && !statusChanged) {
         return;
     }
 
-    if (viewChanged || s_intDrawn < 0) {
-        pushStockCyclicChrome(screenIndex);
-        drawStockMenuStrip(screenIndex, status, statusColor);
-    } else {
-        drawStockMenuStrip(screenIndex, status, statusColor);
+    if (!s_chrome) {
+        pushMinerHeaderChrome();
     }
-
+    dirtyDrawNav(screenIndex, status, statusColor);
     background.pushSprite(0, 0);
     s_intDrawn = screenIndex;
     s_intStatus = statusId;
