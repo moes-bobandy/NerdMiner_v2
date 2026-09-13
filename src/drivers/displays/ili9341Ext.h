@@ -20,6 +20,11 @@ void ili9341ExtDrawRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t col
 void ili9341ExtHLine(int16_t x, int16_t y, int16_t w, uint16_t color);
 void ili9341ExtVLine(int16_t x, int16_t y, int16_t h, uint16_t color);
 
+// PROGMEM RGB565. Byte-swapped to match TFT_eSPI setSwapBytes(true).
+void ili9341ExtPushImage(int16_t x, int16_t y, int16_t w, int16_t h, const uint16_t *data);
+void ili9341ExtPushImageScaled(int16_t x, int16_t y, int16_t dw, int16_t dh,
+                               const uint16_t *data, int16_t sw, int16_t sh);
+
 // 5x7 GLCD, scale 1..6. Returns advance in pixels.
 int16_t ili9341ExtDrawChar(int16_t x, int16_t y, char c, uint16_t fg, uint16_t bg, uint8_t scale);
 int16_t ili9341ExtDrawText(int16_t x, int16_t y, const char *text, uint16_t fg, uint16_t bg, uint8_t scale);

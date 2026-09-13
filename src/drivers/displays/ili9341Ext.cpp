@@ -475,6 +475,71 @@ void ili9341ExtFillScreen(uint16_t color)
     ili9341ExtFillRect(0, 0, EXT_TFT_WIDTH, EXT_TFT_HEIGHT, color);
 }
 
+static void emitRgb565Swapped(const uint16_t *src, uint32_t count)
+{
+    uint8_t buf[128];
+    uint32_t i = 0;
+    digitalWrite(EXT_TFT_CS, LOW);
+    while (i < count) {
+        uint32_t n = count - i;
+        if (n > (sizeof(buf) / 2)) {
+            n = sizeof(buf) / 2;
+        }
+        for (uint32_t k = 0; k < n; ++k) {
+            const uint16_t c = pgm_read_word(&src[i + k]);
+            // TFT_eSPI setSwapBytes(true): send stored low byte first.
+            buf[k * 2] = (uint8_t)(c & 0xFF);
+            buf[k * 2 + 1] = (uint8_t)(c >> 8);
+        }
+        extSpi.writeBytes(buf, n * 2);
+        i += n;
+    }
+    digitalWrite(EXT_TFT_CS, HIGH);
+}
+
+void ili9341ExtPushImage(int16_t x, int16_t y, int16_t w, int16_t h, const uint16_t *data)
+{
+    if (!g_ready || !data || w <= 0 || h <= 0) {
+        return;
+    }
+    beginTxn();
+    setAddrWindow(x, y, w, h);
+    emitRgb565Swapped(data, (uint32_t)w * (uint32_t)h);
+    endTxn();
+}
+
+void ili9341ExtPushImageScaled(int16_t x, int16_t y, int16_t dw, int16_t dh,
+                               const uint16_t *data, int16_t sw, int16_t sh)
+{
+    if (!g_ready || !data || dw <= 0 || dh <= 0 || sw <= 0 || sh <= 0) {
+        return;
+    }
+    beginTxn();
+    setAddrWindow(x, y, dw, dh);
+    digitalWrite(EXT_TFT_CS, LOW);
+    uint8_t buf[160];
+    uint32_t bp = 0;
+    for (int16_t dy = 0; dy < dh; ++dy) {
+        const int16_t sy = (int16_t)((int32_t)dy * sh / dh);
+        const uint16_t *row = data + (int32_t)sy * sw;
+        for (int16_t dx = 0; dx < dw; ++dx) {
+            const int16_t sx = (int16_t)((int32_t)dx * sw / dw);
+            const uint16_t c = pgm_read_word(&row[sx]);
+            buf[bp++] = (uint8_t)(c & 0xFF);
+            buf[bp++] = (uint8_t)(c >> 8);
+            if (bp >= sizeof(buf)) {
+                extSpi.writeBytes(buf, bp);
+                bp = 0;
+            }
+        }
+    }
+    if (bp) {
+        extSpi.writeBytes(buf, bp);
+    }
+    digitalWrite(EXT_TFT_CS, HIGH);
+    endTxn();
+}
+
 void ili9341ExtHLine(int16_t x, int16_t y, int16_t w, uint16_t color)
 {
     ili9341ExtFillRect(x, y, w, 1, color);

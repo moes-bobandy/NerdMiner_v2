@@ -10,25 +10,20 @@
 
 #include <string.h>
 
-// NerdMiner V1 palette (match INT theme, native 320x240 layout — not a blit).
-#define C_BG      0x1082
-#define C_PANEL   0x2104
-#define C_ACCENT  0xDEDB
-#define C_ORANGE  0xFD20
+// Stock V1 palette (same family as tDisplayV1 MinerScreen).
+#define C_BG      0x0000
+#define C_CREAM   0xDEDB
+#define C_PANEL   0x0000
 #define C_MUTED   0x9C92
-#define C_LABEL   0x7BEF
+#define C_ORANGE  0xFD20
 #define C_WHITE   0xFFFF
 #define C_BLACK   0x0000
-#define C_LINE    0x3186
 #define C_OK      0x07E0
 
 #define W EXT_TFT_WIDTH
 #define H EXT_TFT_HEIGHT
 
-// Locked wipe contract: a full-panel C_BG fill on every 1 Hz cyclic tick
-// is Dirt's film-slide (full 320x240 top→bottom dark fill, then restore).
-// Full clear ONLY when the cyclic screen index changes. Live stats are
-// dirty-field updates — no mid-frame blank, no full-width content wipe.
+// Locked wipe contract: full-panel fill ONLY when the cyclic index changes.
 enum {
     EXT_SCR_NONE = -1,
     EXT_SCR_MINER = 0,
@@ -39,6 +34,7 @@ enum {
 
 static int s_extScreen = EXT_SCR_NONE;
 static bool s_chrome = false;
+static int16_t s_artH = 180;
 
 static char s_hdrClock[16];
 static char s_hdrTemp[16];
@@ -49,6 +45,7 @@ static char s_best[16];
 static char s_valids[16];
 static char s_templates[16];
 static char s_mhashes[16];
+static char s_khashes[16];
 static char s_uptime[16];
 static char s_block[16];
 static char s_price[24];
@@ -64,7 +61,7 @@ static void clearFieldCache()
     s_hdrClock[0] = s_hdrTemp[0] = 0;
     s_clock[0] = s_hash[0] = s_shares[0] = 0;
     s_best[0] = s_valids[0] = s_templates[0] = s_mhashes[0] = 0;
-    s_uptime[0] = s_block[0] = s_price[0] = 0;
+    s_khashes[0] = s_uptime[0] = s_block[0] = s_price[0] = 0;
     s_ghash[0] = s_diff[0] = s_fee[0] = s_remain[0] = 0;
     s_pct = -1;
 }
@@ -91,74 +88,48 @@ static void enterExtScreen(int id)
     }
 }
 
-static void drawHeaderChrome(const char *title)
+static int16_t mapX(int srcX, uint16_t sw)
 {
-    ili9341ExtFillRect(0, 0, W, 28, C_PANEL);
-    ili9341ExtDrawText(8, 7, title, C_ACCENT, C_PANEL, 2);
-    ili9341ExtHLine(0, 28, W, C_LINE);
+    if (sw == 0) {
+        return (int16_t)srcX;
+    }
+    return (int16_t)((int32_t)srcX * W / sw);
 }
 
-static void drawHeaderStats(const char *clock, const char *temp)
+static int16_t mapY(int srcY, uint16_t sh)
 {
-    const bool clockCh = takeField(s_hdrClock, sizeof(s_hdrClock), clock ? clock : "");
-    const bool tempCh = takeField(s_hdrTemp, sizeof(s_hdrTemp), temp ? temp : "");
-    if (!clockCh && !tempCh) {
+    if (sh == 0 || s_artH <= 0) {
+        return (int16_t)srcY;
+    }
+    return (int16_t)((int32_t)srcY * s_artH / sh);
+}
+
+static void blitStockArt(int screenIndex)
+{
+    const uint16_t *bits = nullptr;
+    uint16_t sw = 0, sh = 0;
+    tDisplayV1StockFrame(screenIndex, &bits, &sw, &sh);
+    if (!bits || sw == 0 || sh == 0) {
+        s_artH = 180;
         return;
     }
-    ili9341ExtFillRect(168, 4, 152, 20, C_PANEL);
-    if (temp && temp[0]) {
-        char buf[16];
-        snprintf(buf, sizeof(buf), "%sC", temp);
-        ili9341ExtDrawTextRight(250, 9, buf, C_MUTED, C_PANEL, 1);
+    int16_t dh = (int16_t)((int32_t)sh * W / sw);
+    if (dh > 200) {
+        dh = 200;
     }
-    if (clock && clock[0]) {
-        ili9341ExtDrawTextRight(312, 9, clock, C_WHITE, C_PANEL, 1);
-    }
+    s_artH = dh;
+    ili9341ExtPushImageScaled(0, 0, W, dh, bits, (int16_t)sw, (int16_t)sh);
 }
 
-static void drawFooterChrome(void)
+static void drawGoodsBand(void)
 {
-    ili9341ExtFillRect(0, 220, W, 20, C_PANEL);
-    ili9341ExtHLine(0, 220, W, C_LINE);
-    ili9341ExtDrawText(8, 225, "EXT ILI9341 320x240", C_MUTED, C_PANEL, 1);
-    ili9341ExtDrawTextRight(312, 225, CURRENT_VERSION, C_MUTED, C_PANEL, 1);
-}
-
-static void drawStatCell(int16_t x, int16_t y, int16_t w, int16_t h,
-                         const char *label, const char *value, uint16_t valueColor)
-{
-    ili9341ExtFillRect(x, y, w, h, C_PANEL);
-    ili9341ExtDrawRect(x, y, w, h, C_LINE);
-    ili9341ExtDrawText((int16_t)(x + 8), (int16_t)(y + 6), label, C_LABEL, C_PANEL, 1);
-    ili9341ExtDrawText((int16_t)(x + 8), (int16_t)(y + 20), value, valueColor, C_PANEL, 2);
-}
-
-static void dirtyStat(char *slot, size_t cap, const char *value,
-                      int16_t x, int16_t y, int16_t w, int16_t h,
-                      const char *label, uint16_t valueColor)
-{
-    if (takeField(slot, cap, value ? value : "")) {
-        drawStatCell(x, y, w, h, label, value, valueColor);
-    }
-}
-
-static void dirty7Seg(char *slot, size_t cap, const char *text,
-                      int16_t x, int16_t y, uint16_t on,
-                      int16_t w, int16_t h, int16_t gap, int padChars)
-{
-    if (!takeField(slot, cap, text ? text : "")) {
-        return;
-    }
-    char buf[16];
-    if (padChars > 14) {
-        padChars = 14;
-    }
-    snprintf(buf, sizeof(buf), "%-*s", padChars, text ? text : "");
-    ili9341ExtDraw7Seg(x, y, buf, on, C_BG, w, h, gap);
+    ili9341ExtFillRect(0, s_artH, W, (int16_t)(H - s_artH), C_BG);
+    ili9341ExtHLine(0, s_artH, W, C_CREAM);
 }
 
 static void dirtyText(char *slot, size_t cap, const char *text,
-                      int16_t x, int16_t y, uint16_t fg, uint8_t scale, int padChars)
+                      int16_t x, int16_t y, uint16_t fg, uint16_t bg,
+                      uint8_t scale, int padChars)
 {
     if (!takeField(slot, cap, text ? text : "")) {
         return;
@@ -168,7 +139,19 @@ static void dirtyText(char *slot, size_t cap, const char *text,
         padChars = 22;
     }
     snprintf(buf, sizeof(buf), "%-*s", padChars, text ? text : "");
-    ili9341ExtDrawText(x, y, buf, fg, C_BG, scale);
+    ili9341ExtDrawText(x, y, buf, fg, bg, scale);
+}
+
+static void dirtyTextRight(char *slot, size_t cap, const char *text,
+                           int16_t right, int16_t y, uint16_t fg, uint16_t bg,
+                           uint8_t scale)
+{
+    if (!takeField(slot, cap, text ? text : "")) {
+        return;
+    }
+    const int16_t w = ili9341ExtTextWidth(text ? text : "", scale);
+    ili9341ExtFillRect((int16_t)(right - w - 8), y, (int16_t)(w + 8), (int16_t)(8 * scale), bg);
+    ili9341ExtDrawTextRight(right, y, text ? text : "", fg, bg, scale);
 }
 
 static void extMinerScreen(unsigned long mElapsed)
@@ -179,27 +162,48 @@ static void extMinerScreen(unsigned long mElapsed)
                   data.totalKHashes.c_str());
 
     enterExtScreen(EXT_SCR_MINER);
+    const uint16_t *bits = nullptr;
+    uint16_t sw = 240, sh = 135;
+    tDisplayV1StockFrame(0, &bits, &sw, &sh);
+    (void)bits;
     if (!s_chrome) {
-        drawHeaderChrome("MINING");
-        ili9341ExtDrawText(8, 38, "HASHRATE  KH/s", C_LABEL, C_BG, 1);
-        drawFooterChrome();
+        blitStockArt(0);
+        drawGoodsBand();
+        ili9341ExtDrawText(8, (int16_t)(s_artH + 4), "BLOCK TEMPLATES", C_MUTED, C_BG, 1);
+        ili9341ExtDrawText(120, (int16_t)(s_artH + 4), "BEST DIFFICULTY", C_MUTED, C_BG, 1);
+        ili9341ExtDrawText(8, (int16_t)(s_artH + 30), "32BITS SHARES", C_MUTED, C_BG, 1);
+        ili9341ExtDrawText(160, (int16_t)(s_artH + 30), "VALID BLOCKS", C_MUTED, C_BG, 1);
         s_chrome = true;
     }
-    drawHeaderStats(data.currentTime.c_str(), data.temp.c_str());
-    dirty7Seg(s_hash, sizeof(s_hash), data.currentHashRate.c_str(),
-              8, 54, C_ORANGE, 28, 52, 6, 8);
-    dirtyStat(s_shares, sizeof(s_shares), data.completedShares.c_str(),
-              8, 118, 100, 46, "SHARES", C_ACCENT);
-    dirtyStat(s_best, sizeof(s_best), data.bestDiff.c_str(),
-              110, 118, 100, 46, "BEST DIFF", C_ACCENT);
-    dirtyStat(s_valids, sizeof(s_valids), data.valids.c_str(),
-              212, 118, 100, 46, "VALID", C_OK);
-    dirtyStat(s_templates, sizeof(s_templates), data.templates.c_str(),
-              8, 168, 100, 46, "TEMPLATES", C_WHITE);
-    dirtyStat(s_mhashes, sizeof(s_mhashes), data.totalMHashes.c_str(),
-              110, 168, 100, 46, "MHASHES", C_WHITE);
-    dirtyStat(s_uptime, sizeof(s_uptime), data.timeMining.c_str(),
-              212, 168, 100, 46, "UPTIME", C_WHITE);
+
+    if (takeField(s_templates, sizeof(s_templates), data.templates.c_str())) {
+        ili9341ExtDrawText(mapX(140, sw), mapY(15, sh), data.templates.c_str(), C_CREAM, C_BG, 1);
+        ili9341ExtDrawText(8, (int16_t)(s_artH + 14), data.templates.c_str(), C_CREAM, C_BG, 1);
+    }
+    if (takeField(s_best, sizeof(s_best), data.bestDiff.c_str())) {
+        ili9341ExtDrawText(mapX(140, sw), mapY(38, sh), data.bestDiff.c_str(), C_CREAM, C_BG, 1);
+        ili9341ExtDrawText(120, (int16_t)(s_artH + 14), data.bestDiff.c_str(), C_CREAM, C_BG, 1);
+    }
+    if (takeField(s_shares, sizeof(s_shares), data.completedShares.c_str())) {
+        ili9341ExtDrawText(mapX(140, sw), mapY(60, sh), data.completedShares.c_str(), C_CREAM, C_BG, 1);
+        ili9341ExtDrawText(8, (int16_t)(s_artH + 40), data.completedShares.c_str(), C_CREAM, C_BG, 1);
+    }
+    if (takeField(s_valids, sizeof(s_valids), data.valids.c_str())) {
+        ili9341ExtDrawText(mapX(210, sw), mapY(45, sh), data.valids.c_str(), C_CREAM, C_BG, 1);
+        ili9341ExtDrawText(160, (int16_t)(s_artH + 40), data.valids.c_str(), C_OK, C_BG, 1);
+    }
+    dirtyTextRight(s_hash, sizeof(s_hash), data.currentHashRate.c_str(),
+                   mapX(96, sw), mapY(88, sh), C_BLACK, C_CREAM, 2);
+    dirtyTextRight(s_mhashes, sizeof(s_mhashes), data.totalMHashes.c_str(),
+                   mapX(200, sw), mapY(106, sh), C_BLACK, C_CREAM, 1);
+    dirtyTextRight(s_uptime, sizeof(s_uptime), data.timeMining.c_str(),
+                   mapX(226, sw), mapY(85, sh), C_CREAM, C_BG, 1);
+    dirtyTextRight(s_hdrTemp, sizeof(s_hdrTemp), data.temp.c_str(),
+                   mapX(180, sw), mapY(1, sh), C_BLACK, C_CREAM, 1);
+    dirtyTextRight(s_hdrClock, sizeof(s_hdrClock), data.currentTime.c_str(),
+                   mapX(215, sw), mapY(1, sh), C_BLACK, C_CREAM, 1);
+    dirtyText(s_khashes, sizeof(s_khashes), data.totalKHashes.c_str(),
+              240, (int16_t)(s_artH + 14), C_WHITE, C_BG, 1, 8);
 }
 
 static void extClockScreen(unsigned long mElapsed)
@@ -208,21 +212,29 @@ static void extClockScreen(unsigned long mElapsed)
     Serial.printf(">>> EXT clock %s rate=%s\n", data.currentTime.c_str(), data.currentHashRate.c_str());
 
     enterExtScreen(EXT_SCR_CLOCK);
+    const uint16_t *bits = nullptr;
+    uint16_t sw = 240, sh = 135;
+    tDisplayV1StockFrame(1, &bits, &sw, &sh);
     if (!s_chrome) {
-        drawHeaderChrome("CLOCK");
-        ili9341ExtDrawText(8, 40, "LOCAL TIME", C_LABEL, C_BG, 1);
-        drawFooterChrome();
+        blitStockArt(1);
+        drawGoodsBand();
+        ili9341ExtDrawText(8, (int16_t)(s_artH + 8), "HASHRATE KH/s", C_MUTED, C_BG, 1);
+        ili9341ExtDrawText(160, (int16_t)(s_artH + 8), "BLOCK HEIGHT", C_MUTED, C_BG, 1);
         s_chrome = true;
     }
-    drawHeaderStats(data.currentDate.c_str(), nullptr);
-    dirty7Seg(s_clock, sizeof(s_clock), data.currentTime.c_str(),
-              8, 58, C_ACCENT, 26, 56, 5, 8);
-    dirtyStat(s_hash, sizeof(s_hash), data.currentHashRate.c_str(),
-              8, 132, 152, 46, "HASHRATE KH/s", C_ORANGE);
-    dirtyStat(s_block, sizeof(s_block), data.blockHeight.c_str(),
-              164, 132, 148, 46, "BLOCK", C_WHITE);
-    dirtyStat(s_price, sizeof(s_price), data.btcPrice.c_str(),
-              8, 182, 304, 32, "BTC PRICE", C_ACCENT);
+
+    dirtyText(s_clock, sizeof(s_clock), data.currentTime.c_str(),
+              mapX(70, sw), mapY(25, sh), C_CREAM, C_BG, 2, 8);
+    dirtyText(s_price, sizeof(s_price), data.btcPrice.c_str(),
+              mapX(148, sw), mapY(1, sh), C_BLACK, C_CREAM, 1, 10);
+    if (takeField(s_hash, sizeof(s_hash), data.currentHashRate.c_str())) {
+        ili9341ExtDrawTextRight(mapX(70, sw), mapY(103, sh), data.currentHashRate.c_str(), C_BLACK, C_CREAM, 2);
+        ili9341ExtDrawText(8, (int16_t)(s_artH + 20), data.currentHashRate.c_str(), C_ORANGE, C_BG, 2);
+    }
+    if (takeField(s_block, sizeof(s_block), data.blockHeight.c_str())) {
+        ili9341ExtDrawTextRight(mapX(190, sw), mapY(110, sh), data.blockHeight.c_str(), C_BLACK, C_CREAM, 1);
+        ili9341ExtDrawText(160, (int16_t)(s_artH + 20), data.blockHeight.c_str(), C_WHITE, C_BG, 2);
+    }
 }
 
 static void extGlobalScreen(unsigned long mElapsed)
@@ -231,33 +243,43 @@ static void extGlobalScreen(unsigned long mElapsed)
     Serial.printf(">>> EXT global %s height=%s\n", data.globalHashRate.c_str(), data.blockHeight.c_str());
 
     enterExtScreen(EXT_SCR_GLOBAL);
+    const uint16_t *bits = nullptr;
+    uint16_t sw = 240, sh = 135;
+    tDisplayV1StockFrame(2, &bits, &sw, &sh);
     if (!s_chrome) {
-        drawHeaderChrome("NETWORK");
-        ili9341ExtDrawText(8, 38, "BLOCK HEIGHT", C_LABEL, C_BG, 1);
-        drawFooterChrome();
+        blitStockArt(2);
+        drawGoodsBand();
+        ili9341ExtDrawText(8, (int16_t)(s_artH + 6), "GLOBAL HASH", C_MUTED, C_BG, 1);
+        ili9341ExtDrawText(160, (int16_t)(s_artH + 6), "DIFFICULTY", C_MUTED, C_BG, 1);
         s_chrome = true;
     }
-    drawHeaderStats(data.currentTime.c_str(), nullptr);
-    dirtyText(s_block, sizeof(s_block), data.blockHeight.c_str(),
-              8, 54, C_ACCENT, 3, 10);
-    dirtyStat(s_ghash, sizeof(s_ghash), data.globalHashRate.c_str(),
-              8, 92, 152, 46, "GLOBAL HASH", C_WHITE);
-    dirtyStat(s_diff, sizeof(s_diff), data.netwrokDifficulty.c_str(),
-              164, 92, 148, 46, "DIFFICULTY", C_WHITE);
-    dirtyStat(s_fee, sizeof(s_fee), data.halfHourFee.c_str(),
-              8, 142, 152, 46, "FEE", C_ORANGE);
-    dirtyStat(s_hash, sizeof(s_hash), data.currentHashRate.c_str(),
-              164, 142, 148, 46, "MINER KH/s", C_ORANGE);
+
+    dirtyText(s_price, sizeof(s_price), data.btcPrice.c_str(),
+              mapX(148, sw), mapY(1, sh), C_BLACK, C_CREAM, 1, 10);
+    dirtyText(s_hdrClock, sizeof(s_hdrClock), data.currentTime.c_str(),
+              mapX(195, sw), mapY(1, sh), C_BLACK, C_CREAM, 1, 8);
+    dirtyTextRight(s_fee, sizeof(s_fee), data.halfHourFee.c_str(),
+                   mapX(230, sw), mapY(40, sh), C_MUTED, C_BG, 1);
+    dirtyTextRight(s_block, sizeof(s_block), data.blockHeight.c_str(),
+                   mapX(105, sw), mapY(80, sh), C_CREAM, C_BG, 2);
+    if (takeField(s_ghash, sizeof(s_ghash), data.globalHashRate.c_str())) {
+        ili9341ExtDrawTextRight(mapX(205, sw), mapY(115, sh), data.globalHashRate.c_str(), C_BLACK, C_CREAM, 1);
+        ili9341ExtDrawText(8, (int16_t)(s_artH + 16), data.globalHashRate.c_str(), C_WHITE, C_BG, 1);
+    }
+    if (takeField(s_diff, sizeof(s_diff), data.netwrokDifficulty.c_str())) {
+        ili9341ExtDrawTextRight(mapX(230, sw), mapY(68, sh), data.netwrokDifficulty.c_str(), C_MUTED, C_BG, 1);
+        ili9341ExtDrawText(160, (int16_t)(s_artH + 16), data.netwrokDifficulty.c_str(), C_WHITE, C_BG, 1);
+    }
 
     const int pct = (int)data.progressPercent;
     if (pct != s_pct || takeField(s_remain, sizeof(s_remain), data.remainingBlocks.c_str())) {
         s_pct = pct;
-        ili9341ExtFillRect(8, 196, 304, 16, C_PANEL);
+        const int16_t y = (int16_t)(s_artH + 36);
+        ili9341ExtFillRect(8, y, 304, 16, C_PANEL);
+        ili9341ExtDrawRect(8, y, 304, 16, C_CREAM);
         const int filled = 2 + (300 * pct / 100);
-        ili9341ExtFillRect(10, 198, (int16_t)filled, 12, C_ACCENT);
-        char remain[24];
-        snprintf(remain, sizeof(remain), "%s left", data.remainingBlocks.c_str());
-        ili9341ExtDrawText(12, 199, remain, C_BLACK, C_ACCENT, 1);
+        ili9341ExtFillRect(10, (int16_t)(y + 2), (int16_t)filled, 12, C_CREAM);
+        ili9341ExtDrawText(12, (int16_t)(y + 3), data.remainingBlocks.c_str(), C_BLACK, C_CREAM, 1);
     }
 }
 
@@ -267,21 +289,29 @@ static void extPriceScreen(unsigned long mElapsed)
     Serial.printf(">>> EXT price %s rate=%s\n", data.btcPrice.c_str(), data.currentHashRate.c_str());
 
     enterExtScreen(EXT_SCR_PRICE);
+    const uint16_t *bits = nullptr;
+    uint16_t sw = 240, sh = 128;
+    tDisplayV1StockFrame(3, &bits, &sw, &sh);
     if (!s_chrome) {
-        drawHeaderChrome("BTC PRICE");
-        ili9341ExtDrawText(8, 42, "USD", C_LABEL, C_BG, 1);
-        drawFooterChrome();
+        blitStockArt(3);
+        drawGoodsBand();
+        ili9341ExtDrawText(8, (int16_t)(s_artH + 8), "HASHRATE KH/s", C_MUTED, C_BG, 1);
+        ili9341ExtDrawText(160, (int16_t)(s_artH + 8), "32BITS SHARES", C_MUTED, C_BG, 1);
         s_chrome = true;
     }
-    drawHeaderStats(data.currentTime.c_str(), nullptr);
+
+    dirtyText(s_hdrClock, sizeof(s_hdrClock), data.currentTime.c_str(),
+              mapX(148, sw), mapY(1, sh), C_BLACK, C_CREAM, 1, 8);
     dirtyText(s_price, sizeof(s_price), data.btcPrice.c_str(),
-              8, 62, C_ACCENT, 3, 12);
-    dirtyStat(s_hash, sizeof(s_hash), data.currentHashRate.c_str(),
-              8, 120, 152, 46, "HASHRATE KH/s", C_ORANGE);
-    dirtyStat(s_block, sizeof(s_block), data.blockHeight.c_str(),
-              164, 120, 148, 46, "BLOCK", C_WHITE);
-    dirtyStat(s_shares, sizeof(s_shares), data.completedShares.c_str(),
-              8, 170, 304, 42, "SHARES", C_ACCENT);
+              mapX(82, sw), mapY(50, sh), C_CREAM, C_BG, 2, 12);
+    if (takeField(s_hash, sizeof(s_hash), data.currentHashRate.c_str())) {
+        ili9341ExtDrawTextRight(mapX(70, sw), mapY(103, sh), data.currentHashRate.c_str(), C_BLACK, C_CREAM, 2);
+        ili9341ExtDrawText(8, (int16_t)(s_artH + 20), data.currentHashRate.c_str(), C_ORANGE, C_BG, 2);
+    }
+    dirtyTextRight(s_block, sizeof(s_block), data.blockHeight.c_str(),
+                   mapX(190, sw), mapY(110, sh), C_WHITE, C_BG, 1);
+    dirtyText(s_shares, sizeof(s_shares), data.completedShares.c_str(),
+              160, (int16_t)(s_artH + 20), C_CREAM, C_BG, 2, 8);
 }
 
 static void extInit(void)

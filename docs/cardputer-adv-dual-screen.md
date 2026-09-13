@@ -1,4 +1,4 @@
-# Cardputer Adv dual-screen — Dirt routing contract v1 / v2
+# Cardputer Adv dual-screen — Dirt routing contract v1 / v2 / v2.1b
 
 INT **ST7789 240×135** is navigation. EXT **ILI9341 320×240** is mining.
 This is **not** a 1:1 blit of the built-in 240×135 frames onto the porkchop panel.
@@ -9,11 +9,16 @@ Stock PlatformIO env `M5-Cardputer-Adv` is unchanged (keyboard + Launcher path f
 
 | Surface | API | Hardware | Content |
 | --- | --- | --- | --- |
-| INT nav | `nerd_nav()` | ST7789 via stock TFT_eSPI **Setup215** / `tDisplayV1Driver` | Keyboard + G0 cyclic nav, MinerScreen-header chrome (view name / status / hints), loading, setup, Wi‑Fi portal. Backlight and rotate stay here. |
-| EXT mining | `nerd_mining()` | ILI9341 320×240 on HSPI | Hashrate / stats / clock / network / price at **native** 320×240, themed to match NerdMiner (cream `0xDEDB`, orange hashrate, dark panels). |
+| INT nav | `nerd_nav()` | ST7789 via stock TFT_eSPI **Setup215** / `tDisplayV1Driver` | Stock V1 cyclic screens (MinerScreen logo / BLOCK TEMPLATES / BEST DIFFICULTY / 32BITS SHARES / VALID BLOCKS / KH/s / uptime). Keyboard + G0 cycle them. Loading, setup, portal, backlight, rotate stay here. |
+| EXT mining | `nerd_mining()` | ILI9341 320×240 on HSPI | Same stock V1 visual scheme, scaled to 320×240, with a denser mining-goods band. Not a 1:1 blit and not a clone of INT. |
 | Fallback | `nerd_mining()` → `nerd_nav()` | INT only | EXT init fail or `-DNERDMINER_DUAL_FORCE_INT=1`. Full V1 cyclic screens on INT, same as stock. |
 
-When EXT is up, INT is **nav-only**: MinerScreen header as chrome base, OpenFontRender DigitalNumbers + cream `0xDEDB` accents (same as `tDisplayV1Driver`), selected view name, HASHING/WIFI/SETUP, small key hints. No debug list HUD. No live hashrate goods (those stay on EXT). Dirty redraw on index/status/nav only — no per-tick `fillSprite`.
+When EXT is up, INT and EXT share the **stock V1 visual scheme** (logo, chrome, DigitalNumbers / `0xDEDB`, layout family) but **different info**:
+
+- **INT (240×135):** nav / cyclic status — the real `tDisplayV1Driver` MinerScreen / Clock / Network / Price art and layout (same as the single-screen Adv photo).
+- **EXT (320×240):** mining goods — same labels/layout family, larger, plus extra stats. Wipe-fix dirty updates. MADCTL boot-only `0xE8`.
+
+No stripped NETWORK-only debug chrome. No per-tick INT `fillSprite` except the stock screen's own `pushSprite`.
 
 ## Pins (locked)
 
@@ -139,7 +144,7 @@ Same Launcher app-only flash as above. Wipe (v1) must stay **PASS**. Then:
 1. **EXT orientation:** MINING/CLOCK/NETWORK/PRICE on the porkchop must read left-to-right, not mirrored. MADCTL is boot-only `0xE8` (`MX|MY|MV|BGR`). Field photo on `0xA8` was still L/R mirrored.
 2. **Down key:** **Fn+`.`** moves MINING → CLOCK → NETWORK → PRICE. Bare `;` / `.` still next (v1.2). **Fn+`;`** prev. `p` / `,` / Backspace / G0 unchanged.
 3. **INT lag:** After nav, INT updates within about one monitor tick (~100 ms). No per-tick `fillSprite`.
-4. **Stock chrome:** INT is MinerScreen-header nav (view name + HASHING/WIFI/SETUP + small hints). No list HUD. No live hashrate on INT.
+4. **Stock chrome (v2.1b):** INT looks like stock single-screen NerdMiner (logo, clock, BLOCK TEMPLATES / BEST DIFFICULTY / 32BITS SHARES / VALID BLOCKS, KH/s, uptime, gauge). EXT uses the same scheme at 320×240 with denser goods. Not identical clones.
 
 If a wipe remains, note whether it is every second (redraw) or only around SD/boot (bus). Serial `>>> EXT miner|clock|global|price` marks each 1 Hz paint.
 
