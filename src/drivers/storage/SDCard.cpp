@@ -52,6 +52,8 @@ SDCard::~SDCard()
 #ifdef NERDMINER_DUAL_SCREEN
         // Leave HSPI up for the EXT ILI9341. Only the SD device is released.
         nerd_quiesce_ext();
+        pinMode(SDSPI_CS, OUTPUT);
+        digitalWrite(SDSPI_CS, HIGH);
 #else
         ispi_->end();
         delete ispi_;
@@ -75,6 +77,8 @@ void SDCard::terminate()
 #ifdef BUILD_SDSPI
 #ifdef NERDMINER_DUAL_SCREEN
     nerd_quiesce_ext();
+    pinMode(SDSPI_CS, OUTPUT);
+    digitalWrite(SDSPI_CS, HIGH);
 #else
     ispi_->end();
 #endif

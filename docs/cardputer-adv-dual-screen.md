@@ -92,6 +92,50 @@ python3 scripts/export_launcher_bin.py --env M5-Cardputer-Adv-dual
 
 `scripts/export_launcher_bin.py` still rejects non-`0xE9` files and ESP32-S3 factory merges (`0xE9` at `0` **and** `0x10000`).
 
+## EXT redraw / shared-bus notes
+
+`runMonitor()` refreshes mining screens at ~1 Hz (`mining.cpp` when `mElapsed >= 1000`).
+
+The porkchop ILI9341 is written in scan order (CASET/PASET + `RAMWR`). A full-panel `ili9341ExtFillScreen()` on every tick therefore looks like a **slow top-down dark wipe** over the previous frame:
+
+- 320×240 = 76 800 pixels
+- C_BG is `0x1082` (near-black)
+- The first driver pushed that fill with per-byte `SPI.transfer()`, so the wipe was visible for a large fraction of the second
+
+INT V1 does not do this: it composes in a sprite and `pushSprite`s once.
+
+`nerd_quiesce_ext()` only idles EXT CS (GPIO5 **HIGH**). ILI9341 GRAM is retained — SD I/O must not blank the panel. SD is used at boot (`initSDcard` / `loadConfigFile`) then `terminate()`; there is no periodic SD traffic during hashing.
+
+Fixes in this tree:
+
+- Full `fillScreen` only when the cyclic view changes (`;` / `p` / `,`)
+- Periodic updates paint header / footer / stat cells / value bands in place
+- Pixel bursts use `SPI.writeBytes` (not per-byte `transfer`)
+- EXT SPI `begin(..., ss=-1)` so GPIO5 is not the HSPI hardware SS (SD uses GPIO12)
+- Before each EXT transaction, SD CS (GPIO12) is held HIGH
+
+## Field retest (EXT wipe)
+
+Flash the **new** dual Launcher app-only bin (`0xE9`), not the factory merge:
+
+```bash
+pio run -e M5-Cardputer-Adv-dual
+python3 scripts/export_launcher_bin.py --env M5-Cardputer-Adv-dual
+```
+
+Install `firmware/launcher/NerdMiner_v2_M5-Cardputer-Adv-dual.bin` via SD / OTA Install.
+
+On the dirt unit (porkchop EXT wired, dual bin, SD present):
+
+1. Boot. INT should show the NAV HUD. EXT should show the MINING 320×240 layout (hashrate / shares / …).
+2. Leave MINING on EXT for at least 60 seconds. Hashrate / shares / uptime should update **in place**. There must be **no** repeating top-down black (or near-black) wipe.
+3. Press `;` to CLOCK, then NETWORK, then PRICE. A single fast flash on the switch is OK. After the new view is up, it must stay stable between 1 Hz updates.
+4. Press `p` or `,` to walk back. Same: no periodic wipe.
+5. INT HUD must keep the highlighted view in sync. `r` rotate and `b` backlight stay on INT. Hold `KEY_BACKSPACE` still resets.
+6. Confirm boot still talks to SD (config load or “No config file” — no hang, no EXT-stuck-low SD fail).
+
+If a wipe remains, note whether it is every second (redraw) or only around SD/boot (bus). Serial `>>> EXT miner|clock|global|price` marks each 1 Hz paint.
+
 ## Field risks
 
 - **No porkchop, dual firmware:** GPIO 5/3/6 still toggle. With `ASSUME_EXT` (default) INT shows the nav HUD and mining is drawn to a missing panel — flash **stock** `M5-Cardputer-Adv` if you have no EXT glass.

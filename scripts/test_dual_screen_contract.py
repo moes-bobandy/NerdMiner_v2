@@ -73,6 +73,28 @@ class DualScreenContractTests(unittest.TestCase):
         self.assertIn("digitalWrite(EXT_TFT_CS, HIGH)", kb)
         self.assertIn("0x34", read("src/drivers/devices/m5CardputerAdv.h"))
 
+    def test_ext_screens_do_not_fillscreen_every_tick(self) -> None:
+        driver = read("src/drivers/displays/ili9341ExtDriver.cpp")
+        self.assertIn("enterExtScreen", driver)
+        self.assertIn("s_extScreen", driver)
+        # Periodic 1 Hz path must not unconditionally wipe the panel.
+        for name in (
+            "extMinerScreen",
+            "extClockScreen",
+            "extGlobalScreen",
+            "extPriceScreen",
+        ):
+            body = driver.split(f"static void {name}", 1)[1].split("static void ", 1)[0]
+            self.assertIn("enterExtScreen(", body)
+            self.assertNotIn("ili9341ExtFillScreen", body)
+
+        low = read("src/drivers/displays/ili9341Ext.cpp")
+        self.assertIn("writeBytes", low)
+        self.assertIn("extSpi.begin(EXT_TFT_SCK, EXT_TFT_MISO, EXT_TFT_MOSI, -1)", low)
+        self.assertIn("sdCsIdle", low)
+        self.assertNotIn("while (count--)", low)
+        self.assertIn("GRAM is retained", read("src/drivers/displays/nerdMinerDual.cpp"))
+
     def test_docs_and_launcher_recipe(self) -> None:
         docs = read("docs/cardputer-adv-dual-screen.md")
         self.assertIn("nerd_nav()", docs)
@@ -82,6 +104,8 @@ class DualScreenContractTests(unittest.TestCase):
         self.assertIn("factory", docs.lower())
         self.assertTrue(re.search(r"LoRa|Hydra", docs))
         self.assertIn("320", docs)
+        self.assertIn("wipe", docs.lower())
+        self.assertIn("Field retest", docs)
         launcher = read("docs/cardputer-adv-launcher.md")
         self.assertIn("M5-Cardputer-Adv-dual", launcher)
 

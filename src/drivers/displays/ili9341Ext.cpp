@@ -150,19 +150,30 @@ static const uint8_t kFont5x7[][5] PROGMEM = {
     {0x00, 0x00, 0x00, 0x00, 0x00},
 };
 
-static inline void csIdle()
+// Shared HSPI with SD: both chip-selects are GPIO-owned. Never attach EXT
+// CS as the SPI hardware SS — that fights SD (GPIO12) on the same controller.
+static inline void extCsIdle()
 {
     pinMode(EXT_TFT_CS, OUTPUT);
     digitalWrite(EXT_TFT_CS, HIGH);
 }
 
+static inline void sdCsIdle()
+{
+    pinMode(SDSPI_CS, OUTPUT);
+    digitalWrite(SDSPI_CS, HIGH);
+}
+
 static void beginTxn()
 {
+    sdCsIdle();
+    extCsIdle();
     extSpi.beginTransaction(SPISettings(EXT_TFT_SPI_HZ, MSBFIRST, SPI_MODE0));
 }
 
 static void endTxn()
 {
+    extCsIdle();
     extSpi.endTransaction();
 }
 
@@ -199,14 +210,25 @@ static void setAddrWindow(int16_t x, int16_t y, int16_t w, int16_t h)
     writeCommand(ILI9341_RAMWR);
 }
 
+// Burst GRAM fill. Byte-at-a-time transfer() of 320x240 (~153k clocks plus
+// call overhead) is a visible top-down wipe on the porkchop panel.
 static void pushColor(uint16_t color, uint32_t count)
 {
+    uint8_t buf[128];
     const uint8_t hi = (uint8_t)(color >> 8);
     const uint8_t lo = (uint8_t)(color & 0xFF);
+    for (size_t i = 0; i < sizeof(buf); i += 2) {
+        buf[i] = hi;
+        buf[i + 1] = lo;
+    }
     digitalWrite(EXT_TFT_CS, LOW);
-    while (count--) {
-        extSpi.transfer(hi);
-        extSpi.transfer(lo);
+    while (count) {
+        uint32_t n = count;
+        if (n > (sizeof(buf) / 2)) {
+            n = sizeof(buf) / 2;
+        }
+        extSpi.writeBytes(buf, n * 2);
+        count -= n;
     }
     digitalWrite(EXT_TFT_CS, HIGH);
 }
@@ -333,7 +355,8 @@ static void sendInit()
 
 void ili9341ExtQuiesce()
 {
-    csIdle();
+    // Deselect EXT only. SD owns GPIO12 for its own transactions.
+    extCsIdle();
 }
 
 bool ili9341ExtReady()
@@ -362,7 +385,8 @@ bool ili9341ExtBegin()
     digitalWrite(EXT_TFT_CS, HIGH);
     digitalWrite(EXT_TFT_DC, HIGH);
 
-    extSpi.begin(EXT_TFT_SCK, EXT_TFT_MISO, EXT_TFT_MOSI, EXT_TFT_CS);
+    sdCsIdle();
+    extSpi.begin(EXT_TFT_SCK, EXT_TFT_MISO, EXT_TFT_MOSI, -1);
 
     digitalWrite(EXT_TFT_RST, LOW);
     delay(20);
@@ -417,7 +441,6 @@ void ili9341ExtFillRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t col
     setAddrWindow(x, y, w, h);
     pushColor(color, (uint32_t)w * (uint32_t)h);
     endTxn();
-    csIdle();
 }
 
 void ili9341ExtFillScreen(uint16_t color)
@@ -460,6 +483,9 @@ int16_t ili9341ExtDrawChar(int16_t x, int16_t y, char c, uint16_t fg, uint16_t b
     if (scale < 1) {
         scale = 1;
     }
+    if (scale > 6) {
+        scale = 6;
+    }
     uint8_t idx = 0;
     if (c >= 0x20 && c <= 0x7F) {
         idx = (uint8_t)(c - 0x20);
@@ -467,35 +493,35 @@ int16_t ili9341ExtDrawChar(int16_t x, int16_t y, char c, uint16_t fg, uint16_t b
     uint8_t cols[5];
     memcpy_P(cols, kFont5x7[idx], 5);
 
-    if (scale == 1 && g_ready) {
-        beginTxn();
-        setAddrWindow(x, y, 6, 8);
-        digitalWrite(EXT_TFT_CS, LOW);
-        for (int row = 0; row < 8; ++row) {
-            for (int col = 0; col < 6; ++col) {
-                uint16_t color = bg;
-                if (col < 5 && (cols[col] & (1 << row))) {
-                    color = fg;
-                }
-                extSpi.transfer((uint8_t)(color >> 8));
-                extSpi.transfer((uint8_t)(color & 0xFF));
-            }
-        }
-        digitalWrite(EXT_TFT_CS, HIGH);
-        endTxn();
-        csIdle();
-        return 6;
+    if (!g_ready) {
+        return (int16_t)(6 * scale);
     }
 
-    for (int col = 0; col < 5; ++col) {
-        const uint8_t bits = cols[col];
-        for (int row = 0; row < 7; ++row) {
-            const uint16_t color = (bits & (1 << row)) ? fg : bg;
-            ili9341ExtFillRect((int16_t)(x + col * scale), (int16_t)(y + row * scale), scale, scale, color);
+    const int16_t gw = (int16_t)(6 * scale);
+    const int16_t gh = (int16_t)(8 * scale);
+    uint8_t line[6 * 6 * 2];
+    beginTxn();
+    setAddrWindow(x, y, gw, gh);
+    digitalWrite(EXT_TFT_CS, LOW);
+    for (int row = 0; row < 8; ++row) {
+        uint32_t p = 0;
+        for (int col = 0; col < 6; ++col) {
+            uint16_t color = bg;
+            if (col < 5 && (cols[col] & (1 << row))) {
+                color = fg;
+            }
+            for (int sx = 0; sx < scale; ++sx) {
+                line[p++] = (uint8_t)(color >> 8);
+                line[p++] = (uint8_t)(color & 0xFF);
+            }
+        }
+        for (int sy = 0; sy < scale; ++sy) {
+            extSpi.writeBytes(line, p);
         }
     }
-    ili9341ExtFillRect((int16_t)(x + 5 * scale), y, scale, (int16_t)(7 * scale), bg);
-    return (int16_t)(6 * scale);
+    digitalWrite(EXT_TFT_CS, HIGH);
+    endTxn();
+    return gw;
 }
 
 int16_t ili9341ExtDrawText(int16_t x, int16_t y, const char *text, uint16_t fg, uint16_t bg, uint8_t scale)

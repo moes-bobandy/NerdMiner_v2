@@ -23,6 +23,7 @@ static bool g_ext = false;
 
 void nerd_quiesce_ext()
 {
+    // GPIO5 HIGH only. ILI9341 GRAM is retained; this must not blank the panel.
     pinMode(EXT_TFT_CS, OUTPUT);
     digitalWrite(EXT_TFT_CS, HIGH);
     ili9341ExtQuiesce();

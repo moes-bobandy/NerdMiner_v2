@@ -23,6 +23,33 @@
 #define W EXT_TFT_WIDTH
 #define H EXT_TFT_HEIGHT
 
+// runMonitor() calls drawCurrentScreen() at ~1 Hz. A full ili9341ExtFillScreen()
+// on every tick is a visible top-down GRAM wipe (C_BG is near-black 0x1082).
+// Clear the panel only when the cyclic view changes; widgets fill their own
+// boxes on refresh. SD quiesce (EXT CS HIGH) does not blank ILI9341 GRAM.
+enum {
+    EXT_SCR_NONE = -1,
+    EXT_SCR_MINER = 0,
+    EXT_SCR_CLOCK = 1,
+    EXT_SCR_GLOBAL = 2,
+    EXT_SCR_PRICE = 3
+};
+
+static int s_extScreen = EXT_SCR_NONE;
+
+static void enterExtScreen(int id)
+{
+    if (s_extScreen != id) {
+        ili9341ExtFillScreen(C_BG);
+        s_extScreen = id;
+    }
+}
+
+static void fillContentBand(int16_t y, int16_t h)
+{
+    ili9341ExtFillRect(8, y, (int16_t)(W - 16), h, C_BG);
+}
+
 static void drawHeader(const char *title, const char *clock, const char *temp)
 {
     ili9341ExtFillRect(0, 0, W, 28, C_PANEL);
@@ -66,10 +93,11 @@ static void extMinerScreen(unsigned long mElapsed)
                   data.currentHashRate.c_str(), data.completedShares.c_str(),
                   data.totalKHashes.c_str());
 
-    ili9341ExtFillScreen(C_BG);
+    enterExtScreen(EXT_SCR_MINER);
     drawHeader("MINING", data.currentTime.c_str(), data.temp.c_str());
 
     ili9341ExtDrawText(8, 38, "HASHRATE  KH/s", C_LABEL, C_BG, 1);
+    fillContentBand(54, 52);
     ili9341ExtDraw7Seg(8, 54, data.currentHashRate.c_str(), C_ORANGE, C_BG, 28, 52, 6);
 
     drawStatCell(8, 118, 100, 46, "SHARES", data.completedShares.c_str(), C_ACCENT);
@@ -88,10 +116,11 @@ static void extClockScreen(unsigned long mElapsed)
     clock_data data = getClockData(mElapsed);
     Serial.printf(">>> EXT clock %s rate=%s\n", data.currentTime.c_str(), data.currentHashRate.c_str());
 
-    ili9341ExtFillScreen(C_BG);
+    enterExtScreen(EXT_SCR_CLOCK);
     drawHeader("CLOCK", data.currentDate.c_str(), nullptr);
 
     ili9341ExtDrawText(8, 40, "LOCAL TIME", C_LABEL, C_BG, 1);
+    fillContentBand(58, 56);
     ili9341ExtDraw7Seg(8, 58, data.currentTime.c_str(), C_ACCENT, C_BG, 26, 56, 5);
 
     drawStatCell(8, 132, 152, 46, "HASHRATE KH/s", data.currentHashRate.c_str(), C_ORANGE);
@@ -106,10 +135,11 @@ static void extGlobalScreen(unsigned long mElapsed)
     coin_data data = getCoinData(mElapsed);
     Serial.printf(">>> EXT global %s height=%s\n", data.globalHashRate.c_str(), data.blockHeight.c_str());
 
-    ili9341ExtFillScreen(C_BG);
+    enterExtScreen(EXT_SCR_GLOBAL);
     drawHeader("NETWORK", data.currentTime.c_str(), nullptr);
 
     ili9341ExtDrawText(8, 38, "BLOCK HEIGHT", C_LABEL, C_BG, 1);
+    fillContentBand(54, 28);
     ili9341ExtDrawText(8, 54, data.blockHeight.c_str(), C_ACCENT, C_BG, 3);
 
     drawStatCell(8, 92, 152, 46, "GLOBAL HASH", data.globalHashRate.c_str(), C_WHITE);
@@ -133,10 +163,11 @@ static void extPriceScreen(unsigned long mElapsed)
     clock_data data = getClockData(mElapsed);
     Serial.printf(">>> EXT price %s rate=%s\n", data.btcPrice.c_str(), data.currentHashRate.c_str());
 
-    ili9341ExtFillScreen(C_BG);
+    enterExtScreen(EXT_SCR_PRICE);
     drawHeader("BTC PRICE", data.currentTime.c_str(), nullptr);
 
     ili9341ExtDrawText(8, 42, "USD", C_LABEL, C_BG, 1);
+    fillContentBand(62, 36);
     ili9341ExtDrawText(8, 62, data.btcPrice.c_str(), C_ACCENT, C_BG, 3);
 
     drawStatCell(8, 120, 152, 46, "HASHRATE KH/s", data.currentHashRate.c_str(), C_ORANGE);
