@@ -4,6 +4,7 @@
 
 #include <Wire.h>
 
+#include "drivers/devices/device.h"
 #include "drivers/displays/display.h"
 #include "wManager.h"
 
@@ -180,8 +181,8 @@ bool cardputerKeyboardBegin()
     g_resetHeld = false;
 
     // Keep EXT SPI CS idle so the onboard SD (HSPI CS=12) is not contested.
-    pinMode(5, OUTPUT);
-    digitalWrite(5, HIGH);
+    pinMode(EXT_TFT_CS, OUTPUT);
+    digitalWrite(EXT_TFT_CS, HIGH);
     pinMode(TCA8418_INT_PIN, INPUT_PULLUP);
 
     Wire.begin(TCA8418_SDA_PIN, TCA8418_SCL_PIN);
