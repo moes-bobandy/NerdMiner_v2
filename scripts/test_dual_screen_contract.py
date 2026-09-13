@@ -150,9 +150,10 @@ class DualScreenContractTests(unittest.TestCase):
         self.assertNotIn("while (count--)", low)
         self.assertIn("ili9341ExtBeginFrame", low)
         self.assertIn("while (s_frame > 0)", low)
-        # v2.2: boot-only MV|BGR = 0x28 (no MX, no MY). Field FAIL: 0xE8 still mirrored.
+        # v2.3: boot-only MY|MV|BGR|MH = 0xAC. Field FAIL: 0x28 upside-down only.
+        self.assertIn("#define ILI9341_MADCTL_MH  0x04", low)
         self.assertIn(
-            "#define EXT_TFT_MADCTL (ILI9341_MADCTL_MV | ILI9341_MADCTL_BGR)",
+            "#define EXT_TFT_MADCTL (ILI9341_MADCTL_MY | ILI9341_MADCTL_MV | ILI9341_MADCTL_BGR | ILI9341_MADCTL_MH)",
             low,
         )
         self.assertEqual(low.count("writeCommand(ILI9341_MADCTL)"), 1)
@@ -165,7 +166,7 @@ class DualScreenContractTests(unittest.TestCase):
             low,
         )
         self.assertNotIn(
-            "#define EXT_TFT_MADCTL (ILI9341_MADCTL_MY | ILI9341_MADCTL_MV | ILI9341_MADCTL_BGR)",
+            "#define EXT_TFT_MADCTL (ILI9341_MADCTL_MV | ILI9341_MADCTL_BGR)",
             low,
         )
         dual = read("src/drivers/displays/nerdMinerDual.cpp")
@@ -214,6 +215,8 @@ class DualScreenContractTests(unittest.TestCase):
         self.assertIn("320", docs)
         self.assertIn("wipe", docs.lower())
         self.assertIn("Field retest", docs)
+        self.assertIn("0xAC", docs)
+        self.assertIn("MY|MV|BGR|MH", docs)
         self.assertIn("0x28", docs)
         self.assertIn("MV|BGR", docs)
         self.assertIn("0xE8", docs)
@@ -221,6 +224,7 @@ class DualScreenContractTests(unittest.TestCase):
         self.assertIn("0x68", docs)
         self.assertIn("MX|MY|MV|BGR", docs)
         self.assertIn("BLOCK TEMPLATES", docs)
+        self.assertIn("v2.3", docs)
         self.assertIn("v2.2", docs)
         self.assertIn("v2.2b", docs)
         self.assertIn("v2.1b", docs)

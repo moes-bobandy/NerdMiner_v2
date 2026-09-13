@@ -41,13 +41,15 @@
 #define ILI9341_MADCTL_MX  0x40
 #define ILI9341_MADCTL_MV  0x20
 #define ILI9341_MADCTL_BGR 0x08
+#define ILI9341_MADCTL_MH  0x04
 
-// Contract v2.2: boot-only MADCTL MV|BGR = 0x28 (no MX, no MY).
-// Field FAIL: EXT still mirrored/reversed on tip 976c96a with boot 0xE8.
+// Contract v2.3: boot-only MADCTL MY|MV|BGR|MH = 0xAC.
+// Field FAIL on tip e54ac1c with boot 0x28: EXT image upside-down only
+// (not L/R mirrored). Prior FAIL: 0xE8 still mirrored/reversed; 0xA8 L/R mirrored.
 // Keep BGR. Write once in sendInit — do not rewrite MADCTL mid-run.
-// A/B override: -DEXT_TFT_MADCTL=  (rollbacks: 0xE8, 0xA8, 0x68).
+// A/B override: -DEXT_TFT_MADCTL=  (rollbacks: 0x28, 0xE8, 0xA8, 0x68).
 #ifndef EXT_TFT_MADCTL
-#define EXT_TFT_MADCTL (ILI9341_MADCTL_MV | ILI9341_MADCTL_BGR)
+#define EXT_TFT_MADCTL (ILI9341_MADCTL_MY | ILI9341_MADCTL_MV | ILI9341_MADCTL_BGR | ILI9341_MADCTL_MH)
 #endif
 
 #ifndef EXT_TFT_SPI_HZ
