@@ -42,6 +42,13 @@
 #define ILI9341_MADCTL_MV  0x20
 #define ILI9341_MADCTL_BGR 0x08
 
+// HWbot locked: boot-only MADCTL MY|MV|BGR = 0xA8 (upright landscape).
+// Replaces mirrored MX|MV|BGR (0x68). Do not rewrite MADCTL mid-run.
+// Fallback if still reversed: MX|MY|MV|BGR = 0xE8 (-DEXT_TFT_MADCTL=0xE8).
+#ifndef EXT_TFT_MADCTL
+#define EXT_TFT_MADCTL (ILI9341_MADCTL_MY | ILI9341_MADCTL_MV | ILI9341_MADCTL_BGR)
+#endif
+
 #ifndef EXT_TFT_SPI_HZ
 #define EXT_TFT_SPI_HZ 20000000
 #endif
@@ -297,9 +304,9 @@ static void sendInit()
     writeData(0x28);
     writeCommand(ILI9341_VMCTR2);
     writeData(0x86);
-    // Landscape 320x240. Rotate stays on INT per contract.
+    // Landscape 320x240. MADCTL once at boot. Rotate stays on INT.
     writeCommand(ILI9341_MADCTL);
-    writeData(ILI9341_MADCTL_MX | ILI9341_MADCTL_MV | ILI9341_MADCTL_BGR);
+    writeData(EXT_TFT_MADCTL);
     writeCommand(ILI9341_PIXFMT);
     writeData(0x55);
     writeCommand(ILI9341_FRMCTR1);

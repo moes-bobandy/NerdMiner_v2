@@ -69,9 +69,53 @@ class DualScreenContractTests(unittest.TestCase):
         self.assertIn("key == ';'", kb)
         self.assertIn("key == 'p' || key == ','", kb)
         self.assertIn("KEY_BACKSPACE", kb)
+        self.assertIn("KEY_DOWN", kb)
+        self.assertIn("Fn+.", kb)
+        self.assertIn("g_fn", kb)
+        self.assertIn("(keycode - 1)", kb)
+        self.assertIn("switchToNextScreen()", kb)
         self.assertIn("EXT_TFT_CS", kb)
         self.assertIn("digitalWrite(EXT_TFT_CS, HIGH)", kb)
         self.assertIn("0x34", read("src/drivers/devices/m5CardputerAdv.h"))
+        self.assertIn("TCA8418_SDA_PIN", read("src/drivers/devices/m5CardputerAdv.h"))
+        # Down = +1 (next), not an inverted prev delta.
+        self.assertRegex(
+            kb,
+            r"key == KEY_DOWN[\s\S]{0,400}?switchToNextScreen\(\)",
+        )
+        down_block = kb.split("static void dispatchKey")[1].split("static void handleEvent")[0]
+        self.assertLess(
+            down_block.find("KEY_DOWN"),
+            down_block.find("switchToNextScreen()"),
+        )
+        next_at = down_block.find("switchToNextScreen()")
+        prev_at = down_block.find("switchToPrevScreen()")
+        self.assertGreater(next_at, 0)
+        self.assertGreater(prev_at, next_at)
+
+    def test_adv_down_keycode_58_maps_to_key_down(self) -> None:
+        """Host replica of TCA8418 7x8→4x14 remap (Dirt Adv FIFO: ↓=58)."""
+
+        def map_raw(keycode: int):
+            if keycode < 1:
+                return None
+            raw_row = (keycode - 1) // 10
+            raw_col = (keycode - 1) % 10
+            if raw_row > 6 or raw_col > 7:
+                return None
+            col = (raw_row * 2) + (1 if raw_col > 3 else 0)
+            row = (raw_col + 4) % 4
+            if row < 4 and col < 14:
+                return row, col
+            return None
+
+        self.assertEqual(map_raw(58), (3, 11))  # printed ↓ / KEY_DOWN
+        self.assertEqual(map_raw(57), (2, 11))  # ';' (contract next)
+        self.assertEqual(map_raw(54), (3, 10))  # ','
+        self.assertEqual(map_raw(64), (3, 12))  # '/'
+        kb = read("src/drivers/input/tca8418Keyboard.cpp")
+        self.assertIn("',', '.', '/', ' '", kb)
+        self.assertIn("key == '.' || key == KEY_DOWN", kb)
 
     def test_ext_screens_do_not_fillscreen_every_tick(self) -> None:
         driver = read("src/drivers/displays/ili9341ExtDriver.cpp")
@@ -100,12 +144,43 @@ class DualScreenContractTests(unittest.TestCase):
         self.assertNotIn("while (count--)", low)
         self.assertIn("ili9341ExtBeginFrame", low)
         self.assertIn("while (s_frame > 0)", low)
+        # HWbot: boot-only MY|MV|BGR = 0xA8. Not mirrored MX|MV|BGR (0x68).
+        self.assertIn(
+            "ILI9341_MADCTL_MY | ILI9341_MADCTL_MV | ILI9341_MADCTL_BGR",
+            low,
+        )
+        self.assertEqual(low.count("writeCommand(ILI9341_MADCTL)"), 1)
+        self.assertNotIn(
+            "writeData(ILI9341_MADCTL_MX | ILI9341_MADCTL_MV | ILI9341_MADCTL_BGR)",
+            low,
+        )
         dual = read("src/drivers/displays/nerdMinerDual.cpp")
         self.assertIn("GRAM is retained", dual)
         self.assertIn("nerd_ext_begin_frame", dual)
+        self.assertIn("tDisplayV1PushStockChrome", dual)
+        self.assertIn("OpenFontRender", dual)
+        self.assertIn("0xDEDB", dual)
+        self.assertIn("DigitalNumbers", dual + read("src/drivers/displays/tDisplayV1Driver.cpp"))
+        self.assertIn("HASHING", dual)
+        self.assertNotIn("fillSprite(", dual)
+        self.assertNotIn("images_240_135.h", dual)
+        self.assertNotIn("getMiningData", dual)
+        v1 = read("src/drivers/displays/tDisplayV1Driver.cpp")
+        self.assertIn("tDisplayV1PushStockChrome", v1)
+        self.assertIn("MinerScreen", v1)
+        self.assertNotIn("minerClockScreen", v1.split("tDisplayV1PushStockChrome")[1].split("CyclicScreenFunction")[0])
+        self.assertIn("s_intDirty", dual)
+        self.assertNotIn("NAV  INT ST7789", dual)
         disp = read("src/drivers/displays/display.cpp")
         self.assertIn("nerd_ext_begin_frame()", disp)
         self.assertIn("nerd_ext_end_frame()", disp)
+        self.assertIn("nerd_mark_int_nav_dirty()", disp)
+        self.assertIn("nerd_poll_int_nav()", disp)
+        # INT menu before EXT mining paint (lag fix).
+        self.assertLess(
+            disp.find("nerd_draw_int_nav_hud(idx, mElapsed)"),
+            disp.find("nerd_ext_begin_frame()"),
+        )
 
     def test_docs_and_launcher_recipe(self) -> None:
         docs = read("docs/cardputer-adv-dual-screen.md")

@@ -81,8 +81,8 @@ Stock upstream Adv support only wired **G0** as a one-button device. This fork d
 
 | Key | Action |
 | --- | --- |
-| Enter, Space, `n`, `.`, `/`, `;` | Next screen |
-| `p`, `,` | Previous screen |
+| Enter, Space, `n`, `.`, `/`, `;`, **Fn+`.`** (Down) | Next screen (down the cyclic list) |
+| `p`, `,`, **Fn+`;`** (Up) | Previous screen |
 | Short tap Backspace (`KEY_BACKSPACE` / HID `0x2A`) | Previous screen |
 | `1`–`4` | Jump to cyclic screen 0–3 |
 | `r` | Rotate display |

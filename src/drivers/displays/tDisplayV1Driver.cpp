@@ -253,6 +253,19 @@ void tDisplay_DoLedStuff(unsigned long frame)
 {
 }
 
+#ifdef NERDMINER_DUAL_SCREEN
+void tDisplayV1PushStockChrome(TFT_eSprite *spr, int screenIndex)
+{
+  // INT nav chrome base is MinerScreen only (ARCH v2). Shared PROGMEM —
+  // do not include images_240_135.h from another TU.
+  (void)screenIndex;
+  if (!spr) {
+    return;
+  }
+  spr->pushImage(0, 0, MinerWidth, MinerHeight, MinerScreen);
+}
+#endif
+
 CyclicScreenFunction tDisplayCyclicScreens[] = {tDisplay_MinerScreen, tDisplay_ClockScreen, tDisplay_GlobalHashScreen, tDisplay_BTCprice};
 
 DisplayDriver tDisplayV1Driver = {
