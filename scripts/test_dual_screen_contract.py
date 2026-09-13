@@ -122,8 +122,12 @@ class DualScreenContractTests(unittest.TestCase):
         self.assertIn("enterExtScreen", driver)
         self.assertIn("s_extScreen", driver)
         self.assertIn("takeField", driver)
-        self.assertIn("dirty7Seg", driver)
-        self.assertIn("dirtyStat", driver)
+        self.assertIn("BLOCK TEMPLATES", driver)
+        self.assertIn("BEST DIFFICULTY", driver)
+        self.assertIn("32BITS SHARES", driver)
+        self.assertIn("VALID BLOCKS", driver)
+        self.assertIn("tDisplayV1StockFrame", driver)
+        self.assertIn("blitStockArt", driver)
         self.assertNotIn("static void fillContentBand", driver)
         # Full clear lives only in enterExtScreen (screen-index change).
         self.assertEqual(driver.count("ili9341ExtFillScreen("), 1)
@@ -144,9 +148,9 @@ class DualScreenContractTests(unittest.TestCase):
         self.assertNotIn("while (count--)", low)
         self.assertIn("ili9341ExtBeginFrame", low)
         self.assertIn("while (s_frame > 0)", low)
-        # HWbot: boot-only MY|MV|BGR = 0xA8. Not mirrored MX|MV|BGR (0x68).
+        # v2.1: boot-only MX|MY|MV|BGR = 0xE8. Field: 0xA8 was still L/R mirrored.
         self.assertIn(
-            "ILI9341_MADCTL_MY | ILI9341_MADCTL_MV | ILI9341_MADCTL_BGR",
+            "ILI9341_MADCTL_MX | ILI9341_MADCTL_MY | ILI9341_MADCTL_MV | ILI9341_MADCTL_BGR",
             low,
         )
         self.assertEqual(low.count("writeCommand(ILI9341_MADCTL)"), 1)
@@ -154,23 +158,31 @@ class DualScreenContractTests(unittest.TestCase):
             "writeData(ILI9341_MADCTL_MX | ILI9341_MADCTL_MV | ILI9341_MADCTL_BGR)",
             low,
         )
+        self.assertNotIn(
+            "#define EXT_TFT_MADCTL (ILI9341_MADCTL_MY | ILI9341_MADCTL_MV | ILI9341_MADCTL_BGR)",
+            low,
+        )
         dual = read("src/drivers/displays/nerdMinerDual.cpp")
         self.assertIn("GRAM is retained", dual)
         self.assertIn("nerd_ext_begin_frame", dual)
-        self.assertIn("tDisplayV1PushStockChrome", dual)
-        self.assertIn("OpenFontRender", dual)
-        self.assertIn("0xDEDB", dual)
-        self.assertIn("DigitalNumbers", dual + read("src/drivers/displays/tDisplayV1Driver.cpp"))
-        self.assertIn("HASHING", dual)
+        self.assertIn("cyclic_screens[screenIndex]", dual)
+        self.assertIn("nav->cyclic_screens[screenIndex](0)", dual)
+        self.assertIn("if (!s_intDirty && !viewChanged)", dual)
+        self.assertNotIn("&& mElapsed == 0", dual)
+        self.assertIn("DigitalNumbers", read("src/drivers/displays/tDisplayV1Driver.cpp"))
+        self.assertIn("0xDEDB", read("src/drivers/displays/tDisplayV1Driver.cpp"))
         self.assertNotIn("fillSprite(", dual)
         self.assertNotIn("images_240_135.h", dual)
         self.assertNotIn("getMiningData", dual)
+        self.assertNotIn("HASHING", dual)
         v1 = read("src/drivers/displays/tDisplayV1Driver.cpp")
+        self.assertIn("tDisplayV1StockFrame", v1)
         self.assertIn("tDisplayV1PushStockChrome", v1)
         self.assertIn("MinerScreen", v1)
-        self.assertNotIn("minerClockScreen", v1.split("tDisplayV1PushStockChrome")[1].split("CyclicScreenFunction")[0])
+        self.assertIn("minerClockScreen", v1.split("tDisplayV1StockFrame")[1].split("CyclicScreenFunction")[0])
         self.assertIn("s_intDirty", dual)
         self.assertNotIn("NAV  INT ST7789", dual)
+        self.assertIn("ili9341ExtPushImageScaled", low)
         disp = read("src/drivers/displays/display.cpp")
         self.assertIn("nerd_ext_begin_frame()", disp)
         self.assertIn("nerd_ext_end_frame()", disp)
@@ -178,9 +190,10 @@ class DualScreenContractTests(unittest.TestCase):
         self.assertIn("nerd_poll_int_nav()", disp)
         # INT menu before EXT mining paint (lag fix).
         self.assertLess(
-            disp.find("nerd_draw_int_nav_hud(idx, mElapsed)"),
+            disp.find("nerd_draw_int_nav_hud(idx, 0)"),
             disp.find("nerd_ext_begin_frame()"),
         )
+        self.assertNotIn("nerd_draw_int_nav_hud(idx, mElapsed)", disp)
 
     def test_docs_and_launcher_recipe(self) -> None:
         docs = read("docs/cardputer-adv-dual-screen.md")
@@ -193,6 +206,13 @@ class DualScreenContractTests(unittest.TestCase):
         self.assertIn("320", docs)
         self.assertIn("wipe", docs.lower())
         self.assertIn("Field retest", docs)
+        self.assertIn("0xE8", docs)
+        self.assertIn("MX|MY|MV|BGR", docs)
+        self.assertIn("BLOCK TEMPLATES", docs)
+        self.assertIn("v2.1b", docs)
+        self.assertIn("not identical clones", docs)
+        self.assertIn("nav/status only", docs)
+        self.assertIn("mining goods", docs)
         launcher = read("docs/cardputer-adv-launcher.md")
         self.assertIn("M5-Cardputer-Adv-dual", launcher)
 

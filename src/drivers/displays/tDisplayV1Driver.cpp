@@ -254,15 +254,45 @@ void tDisplay_DoLedStuff(unsigned long frame)
 }
 
 #ifdef NERDMINER_DUAL_SCREEN
-void tDisplayV1PushStockChrome(TFT_eSprite *spr, int screenIndex)
+void tDisplayV1StockFrame(int screenIndex, const uint16_t **bits, uint16_t *w, uint16_t *h)
 {
-  // INT nav chrome base is MinerScreen only (ARCH v2). Shared PROGMEM —
-  // do not include images_240_135.h from another TU.
-  (void)screenIndex;
-  if (!spr) {
+  // Shared PROGMEM — do not include images_240_135.h from another TU.
+  if (!bits || !w || !h) {
     return;
   }
-  spr->pushImage(0, 0, MinerWidth, MinerHeight, MinerScreen);
+  switch (screenIndex) {
+    case 1:
+      *bits = minerClockScreen;
+      *w = minerClockWidth;
+      *h = minerClockHeight;
+      break;
+    case 2:
+      *bits = globalHashScreen;
+      *w = globalHashWidth;
+      *h = globalHashHeight;
+      break;
+    case 3:
+      *bits = priceScreen;
+      *w = priceScreenWidth;
+      *h = priceScreenHeight;
+      break;
+    default:
+      *bits = MinerScreen;
+      *w = MinerWidth;
+      *h = MinerHeight;
+      break;
+  }
+}
+
+void tDisplayV1PushStockChrome(TFT_eSprite *spr, int screenIndex)
+{
+  const uint16_t *bits = nullptr;
+  uint16_t w = 0, h = 0;
+  tDisplayV1StockFrame(screenIndex, &bits, &w, &h);
+  if (!spr || !bits) {
+    return;
+  }
+  spr->pushImage(0, 0, w, h, bits);
 }
 #endif
 

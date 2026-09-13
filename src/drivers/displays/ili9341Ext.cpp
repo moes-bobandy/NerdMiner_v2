@@ -42,11 +42,12 @@
 #define ILI9341_MADCTL_MV  0x20
 #define ILI9341_MADCTL_BGR 0x08
 
-// HWbot locked: boot-only MADCTL MY|MV|BGR = 0xA8 (upright landscape).
-// Replaces mirrored MX|MV|BGR (0x68). Do not rewrite MADCTL mid-run.
-// Fallback if still reversed: MX|MY|MV|BGR = 0xE8 (-DEXT_TFT_MADCTL=0xE8).
+// HWbot / Contract v2.1: boot-only MADCTL MX|MY|MV|BGR = 0xE8.
+// Field (dirt porkchop): MY|MV|BGR (0xA8) was still L/R mirrored.
+// Keep BGR. Write once in sendInit — do not rewrite MADCTL mid-run.
+// Override: -DEXT_TFT_MADCTL=0xA8 (or another ILI9341 MADCTL byte).
 #ifndef EXT_TFT_MADCTL
-#define EXT_TFT_MADCTL (ILI9341_MADCTL_MY | ILI9341_MADCTL_MV | ILI9341_MADCTL_BGR)
+#define EXT_TFT_MADCTL (ILI9341_MADCTL_MX | ILI9341_MADCTL_MY | ILI9341_MADCTL_MV | ILI9341_MADCTL_BGR)
 #endif
 
 #ifndef EXT_TFT_SPI_HZ
@@ -472,6 +473,71 @@ void ili9341ExtFillRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t col
 void ili9341ExtFillScreen(uint16_t color)
 {
     ili9341ExtFillRect(0, 0, EXT_TFT_WIDTH, EXT_TFT_HEIGHT, color);
+}
+
+static void emitRgb565Swapped(const uint16_t *src, uint32_t count)
+{
+    uint8_t buf[128];
+    uint32_t i = 0;
+    digitalWrite(EXT_TFT_CS, LOW);
+    while (i < count) {
+        uint32_t n = count - i;
+        if (n > (sizeof(buf) / 2)) {
+            n = sizeof(buf) / 2;
+        }
+        for (uint32_t k = 0; k < n; ++k) {
+            const uint16_t c = pgm_read_word(&src[i + k]);
+            // TFT_eSPI setSwapBytes(true): send stored low byte first.
+            buf[k * 2] = (uint8_t)(c & 0xFF);
+            buf[k * 2 + 1] = (uint8_t)(c >> 8);
+        }
+        extSpi.writeBytes(buf, n * 2);
+        i += n;
+    }
+    digitalWrite(EXT_TFT_CS, HIGH);
+}
+
+void ili9341ExtPushImage(int16_t x, int16_t y, int16_t w, int16_t h, const uint16_t *data)
+{
+    if (!g_ready || !data || w <= 0 || h <= 0) {
+        return;
+    }
+    beginTxn();
+    setAddrWindow(x, y, w, h);
+    emitRgb565Swapped(data, (uint32_t)w * (uint32_t)h);
+    endTxn();
+}
+
+void ili9341ExtPushImageScaled(int16_t x, int16_t y, int16_t dw, int16_t dh,
+                               const uint16_t *data, int16_t sw, int16_t sh)
+{
+    if (!g_ready || !data || dw <= 0 || dh <= 0 || sw <= 0 || sh <= 0) {
+        return;
+    }
+    beginTxn();
+    setAddrWindow(x, y, dw, dh);
+    digitalWrite(EXT_TFT_CS, LOW);
+    uint8_t buf[160];
+    uint32_t bp = 0;
+    for (int16_t dy = 0; dy < dh; ++dy) {
+        const int16_t sy = (int16_t)((int32_t)dy * sh / dh);
+        const uint16_t *row = data + (int32_t)sy * sw;
+        for (int16_t dx = 0; dx < dw; ++dx) {
+            const int16_t sx = (int16_t)((int32_t)dx * sw / dw);
+            const uint16_t c = pgm_read_word(&row[sx]);
+            buf[bp++] = (uint8_t)(c & 0xFF);
+            buf[bp++] = (uint8_t)(c >> 8);
+            if (bp >= sizeof(buf)) {
+                extSpi.writeBytes(buf, bp);
+                bp = 0;
+            }
+        }
+    }
+    if (bp) {
+        extSpi.writeBytes(buf, bp);
+    }
+    digitalWrite(EXT_TFT_CS, HIGH);
+    endTxn();
 }
 
 void ili9341ExtHLine(int16_t x, int16_t y, int16_t w, uint16_t color)
