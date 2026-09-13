@@ -73,6 +73,7 @@ Optional flags on the dual env:
 | --- | --- |
 | `-DNERDMINER_DUAL_ASSUME_EXT=1` | Default. Porkchop pin list has no EXT MISO, so ID probe is best-effort. |
 | `-DNERDMINER_DUAL_FORCE_INT=1` | Force INT-only fallback (no EXT traffic). |
+| `-DEXT_TFT_MADCTL=0xA8` | Override boot MADCTL. Default is `MX|MY|MV|BGR` = `0xE8`. |
 
 ## Launcher (app-only `0xE9`)
 
@@ -131,11 +132,11 @@ On the dirt unit (porkchop EXT wired, dual bin, SD present):
 5. INT must keep the selected cyclic view in sync (stock miner/clock/network/price chrome, not a dual-HUD list). `r` rotate and `b` backlight stay on INT. Hold `KEY_BACKSPACE` still resets.
 6. Confirm boot still talks to SD (config load or “No config file” — no hang, no EXT-stuck-low SD fail).
 
-## Field retest (contract v2)
+## Field retest (contract v2 / v2.1)
 
 Same Launcher app-only flash as above. Wipe (v1) must stay **PASS**. Then:
 
-1. **EXT orientation:** MINING/CLOCK/NETWORK/PRICE on the porkchop must read left-to-right, not mirrored. MADCTL is boot-only `0xA8`.
+1. **EXT orientation:** MINING/CLOCK/NETWORK/PRICE on the porkchop must read left-to-right, not mirrored. MADCTL is boot-only `0xE8` (`MX|MY|MV|BGR`). Field photo on `0xA8` was still L/R mirrored.
 2. **Down key:** **Fn+`.`** moves MINING → CLOCK → NETWORK → PRICE. Bare `;` / `.` still next (v1.2). **Fn+`;`** prev. `p` / `,` / Backspace / G0 unchanged.
 3. **INT lag:** After nav, INT updates within about one monitor tick (~100 ms). No per-tick `fillSprite`.
 4. **Stock chrome:** INT is MinerScreen-header nav (view name + HASHING/WIFI/SETUP + small hints). No list HUD. No live hashrate on INT.
@@ -149,5 +150,5 @@ If a wipe remains, note whether it is every second (redraw) or only around SD/bo
 - **SD + EXT:** If EXT CS is left low, SD enumerates fail. Boot always idles GPIO5 HIGH; `loadConfigFile` / `initSDcard` quiesce EXT first.
 - **LoRa / Hydra on the Grove/hat pins:** Do not stack with the porkchop.
 - **Color order:** Cheap ILI9341 modules may swap R/B. Driver uses BGR MADCTL; swap in `ili9341Ext.cpp` if a panel looks inverted.
-- **EXT orientation (v2 / HWbot):** MADCTL is written **once at boot**: `MY|MV|BGR` = `0xA8`. Replaces mirrored `MX|MV|BGR` (`0x68`). Do not rewrite mid-run. Fallback `-DEXT_TFT_MADCTL=0xE8` (`MX|MY|MV|BGR`) only if the panel is still reversed.
+- **EXT orientation (v2.1 / HWbot):** MADCTL is written **once at boot**: `MX|MY|MV|BGR` = `0xE8`. Field on dirt porkchop: `MY|MV|BGR` (`0xA8`) was still left-to-right mirrored (text backwards). BGR kept. Do not rewrite mid-run. Override `-DEXT_TFT_MADCTL=` (e.g. `0xA8`) if a panel needs the previous byte.
 - **Keyboard / Launcher:** Dual env still compiles TCA8418 v1.2 and the app-only export. Stock env is the safe path if you only want PR #1 behavior.

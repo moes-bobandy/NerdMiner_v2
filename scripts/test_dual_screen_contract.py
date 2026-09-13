@@ -144,14 +144,18 @@ class DualScreenContractTests(unittest.TestCase):
         self.assertNotIn("while (count--)", low)
         self.assertIn("ili9341ExtBeginFrame", low)
         self.assertIn("while (s_frame > 0)", low)
-        # HWbot: boot-only MY|MV|BGR = 0xA8. Not mirrored MX|MV|BGR (0x68).
+        # v2.1: boot-only MX|MY|MV|BGR = 0xE8. Field: 0xA8 was still L/R mirrored.
         self.assertIn(
-            "ILI9341_MADCTL_MY | ILI9341_MADCTL_MV | ILI9341_MADCTL_BGR",
+            "ILI9341_MADCTL_MX | ILI9341_MADCTL_MY | ILI9341_MADCTL_MV | ILI9341_MADCTL_BGR",
             low,
         )
         self.assertEqual(low.count("writeCommand(ILI9341_MADCTL)"), 1)
         self.assertNotIn(
             "writeData(ILI9341_MADCTL_MX | ILI9341_MADCTL_MV | ILI9341_MADCTL_BGR)",
+            low,
+        )
+        self.assertNotIn(
+            "#define EXT_TFT_MADCTL (ILI9341_MADCTL_MY | ILI9341_MADCTL_MV | ILI9341_MADCTL_BGR)",
             low,
         )
         dual = read("src/drivers/displays/nerdMinerDual.cpp")
@@ -193,6 +197,8 @@ class DualScreenContractTests(unittest.TestCase):
         self.assertIn("320", docs)
         self.assertIn("wipe", docs.lower())
         self.assertIn("Field retest", docs)
+        self.assertIn("0xE8", docs)
+        self.assertIn("MX|MY|MV|BGR", docs)
         launcher = read("docs/cardputer-adv-launcher.md")
         self.assertIn("M5-Cardputer-Adv-dual", launcher)
 
