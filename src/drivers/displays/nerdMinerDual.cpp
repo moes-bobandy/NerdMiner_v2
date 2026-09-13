@@ -8,7 +8,6 @@
 #include "monitor.h"
 #include "version.h"
 #include "drivers/devices/device.h"
-#include "media/images_240_135.h"
 
 #if TFT_MOSI != 35 || TFT_SCLK != 36 || TFT_CS != 37 || TFT_DC != 34 || TFT_RST != 33 || TFT_BL != 38
 #error "Dirt contract v1: INT ST7789 must stay Setup215 MOSI35 SCLK36 CS37 DC34 RST33 BL38"
@@ -98,20 +97,7 @@ static void pushStockCyclicChrome(int screenIndex)
 {
     // Same 240x135 bitmaps as stock tDisplayV1 cyclic screens — INT is the
     // menu/chooser, not a dual-HUD list. Live mining goods stay on EXT.
-    switch (screenIndex) {
-    case 1:
-        background.pushImage(0, 0, minerClockWidth, minerClockHeight, minerClockScreen);
-        break;
-    case 2:
-        background.pushImage(0, 0, globalHashWidth, globalHashHeight, globalHashScreen);
-        break;
-    case 3:
-        background.pushImage(0, 0, priceScreenWidth, priceScreenHeight, priceScreen);
-        break;
-    default:
-        background.pushImage(0, 0, MinerWidth, MinerHeight, MinerScreen);
-        break;
-    }
+    tDisplayV1PushStockChrome(&background, screenIndex);
 }
 
 static void drawStockMenuStrip(int screenIndex, const char *status, uint16_t statusColor)

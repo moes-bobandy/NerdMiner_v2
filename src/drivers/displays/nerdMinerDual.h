@@ -18,6 +18,9 @@ void nerd_quiesce_ext();
 void nerd_ext_begin_frame();
 void nerd_ext_end_frame();
 
+class TFT_eSprite;
+void tDisplayV1PushStockChrome(TFT_eSprite *spr, int screenIndex);
+
 void nerd_dual_init();
 void nerd_draw_int_nav_hud(int screenIndex, unsigned long mElapsed);
 // Keyboard / G0 mark dirty; monitor animateCurrentScreen paints INT within ~100ms
