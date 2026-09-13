@@ -169,7 +169,7 @@ void drawCurrentScreen(unsigned long mElapsed)
 #ifdef NERDMINER_DUAL_SCREEN
   // INT cyclic menu first so nav does not wait on the slow EXT mining paint.
   if (nerd_ext_available()) {
-    nerd_draw_int_nav_hud(idx, mElapsed);
+    nerd_draw_int_nav_hud(idx, 0);
   }
   nerd_ext_begin_frame();
 #endif

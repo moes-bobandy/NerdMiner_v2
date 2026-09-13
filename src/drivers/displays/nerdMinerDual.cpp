@@ -92,14 +92,16 @@ void nerd_draw_int_nav_hud(int screenIndex, unsigned long mElapsed)
         screenIndex = 0;
     }
 
-    // ARCH v2.1b addendum: same stock V1 scheme, info split.
-    // INT = nav/status only. EXT = mining goods.
+    // Floor: INT dirty-only. No 1 Hz full V1 goods paint.
+    // Redraw on dirty / index / view change only. Force mElapsed==0 so
+    // stock chrome/status is used, not live mining ticks (those stay EXT).
+    (void)mElapsed;
     const bool viewChanged = (screenIndex != s_intDrawn);
-    if (!s_intDirty && !viewChanged && mElapsed == 0) {
+    if (!s_intDirty && !viewChanged) {
         return;
     }
 
-    nav->cyclic_screens[screenIndex](mElapsed);
+    nav->cyclic_screens[screenIndex](0);
     s_intDrawn = screenIndex;
     s_intDirty = false;
 }

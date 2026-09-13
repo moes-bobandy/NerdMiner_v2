@@ -15,7 +15,7 @@ Stock PlatformIO env `M5-Cardputer-Adv` is unchanged (keyboard + Launcher path f
 
 When EXT is up, INT and EXT share the **stock V1 visual scheme** (logo, chrome, fonts like single-screen NerdMiner) but **different info** — not identical clones:
 
-- **INT (240×135):** nav/status only
+- **INT (240×135):** nav/status only. Dirty-only redraw (index / view / `s_intDirty`). No 1 Hz full V1 goods paint. `mElapsed` forced to 0 on the INT path.
 - **EXT (320×240):** mining goods
 
 No stripped NETWORK-only debug chrome. No per-tick INT `fillSprite` except the stock screen's own `pushSprite`.
@@ -143,7 +143,7 @@ Same Launcher app-only flash as above. Wipe (v1) must stay **PASS**. Then:
 
 1. **EXT orientation:** MINING/CLOCK/NETWORK/PRICE on the porkchop must read left-to-right, not mirrored. MADCTL is boot-only `0xE8` (`MX|MY|MV|BGR`). Field photo on `0xA8` was still L/R mirrored.
 2. **Down key:** **Fn+`.`** moves MINING → CLOCK → NETWORK → PRICE. Bare `;` / `.` still next (v1.2). **Fn+`;`** prev. `p` / `,` / Backspace / G0 unchanged.
-3. **INT lag:** After nav, INT updates within about one monitor tick (~100 ms). No per-tick `fillSprite`.
+3. **INT lag / dirty-only:** After nav, INT updates within about one monitor tick (~100 ms). No 1 Hz full V1 goods paint. No per-tick `fillSprite`.
 4. **Stock chrome (v2.1b):** INT looks like stock single-screen NerdMiner (logo, clock, BLOCK TEMPLATES / BEST DIFFICULTY / 32BITS SHARES / VALID BLOCKS, KH/s, uptime, gauge). EXT uses the same scheme at 320×240 with denser goods. Not identical clones.
 
 If a wipe remains, note whether it is every second (redraw) or only around SD/boot (bus). Serial `>>> EXT miner|clock|global|price` marks each 1 Hz paint.
