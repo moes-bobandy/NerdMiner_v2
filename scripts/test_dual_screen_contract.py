@@ -139,6 +139,12 @@ class DualScreenContractTests(unittest.TestCase):
         self.assertIn("ili9341ExtFillScreen", enter)
         self.assertIn("blitStockOnce", enter)
         self.assertIn("s_extScreen == id", enter)
+        band = driver.split("static void drawGoodsBand", 1)[1].split("static void ", 1)[0]
+        self.assertIn("ili9341ExtHLine", band)
+        self.assertNotIn("ili9341ExtFillRect", band)
+        self.assertNotIn("ili9341ExtFillScreen", band)
+        miner = driver.split("static void extMinerScreen", 1)[1].split("static void ", 1)[0]
+        self.assertLess(miner.find("enterExtScreen("), miner.find("getMiningData("))
         for name in (
             "extMinerScreen",
             "extClockScreen",

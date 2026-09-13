@@ -156,5 +156,5 @@ If a wipe remains, note whether it is every second (redraw) or only around SD/bo
 - **LoRa / Hydra on the Grove/hat pins:** Do not stack with the porkchop.
 - **Color order:** Cheap ILI9341 modules may swap R/B. Driver uses BGR MADCTL; swap in `ili9341Ext.cpp` if a panel looks inverted.
 - **EXT orientation (v2.3):** MADCTL is written **once at boot**: `MY|MV|BGR|MH` = `0xAC`. Field FAIL on `0x28` (upside-down only, not L/R mirrored). Earlier `0xE8` still mirrored/reversed; `0xA8` was L/R mirrored. BGR kept. Do not rewrite mid-run. Override `-DEXT_TFT_MADCTL=` for A/B; rollbacks are `0x28`, `0xE8`, `0xA8`, `0x68`. If L/R returns, try `0x38` (`MV|ML|BGR`).
-- **EXT switch (v2.3+):** On cyclic index change only: one `FillScreen` + one stock V1 compose/scale-blit, then goods-band labels once. Steady 1 Hz ticks are dirty-field goods only — no second full compose or multi-pass clear.
+- **EXT switch (v2.3+):** On cyclic index change only: one `FillScreen` + one stock V1 compose/scale-blit (before `get*Data`), then goods-band labels once. No second band wipe. Steady 1 Hz ticks are dirty-field goods only — no second full compose or multi-pass clear.
 - **Keyboard / Launcher:** Dual env still compiles TCA8418 v1.2 and the app-only export. Stock env is the safe path if you only want PR #1 behavior.
