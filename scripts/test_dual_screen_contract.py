@@ -148,12 +148,16 @@ class DualScreenContractTests(unittest.TestCase):
         self.assertNotIn("while (count--)", low)
         self.assertIn("ili9341ExtBeginFrame", low)
         self.assertIn("while (s_frame > 0)", low)
-        # v2.1: boot-only MX|MY|MV|BGR = 0xE8. Field: 0xA8 was still L/R mirrored.
+        # v2.2: boot-only MV|BGR = 0x28 (no MX, no MY). Field FAIL: 0xE8 still mirrored.
         self.assertIn(
-            "ILI9341_MADCTL_MX | ILI9341_MADCTL_MY | ILI9341_MADCTL_MV | ILI9341_MADCTL_BGR",
+            "#define EXT_TFT_MADCTL (ILI9341_MADCTL_MV | ILI9341_MADCTL_BGR)",
             low,
         )
         self.assertEqual(low.count("writeCommand(ILI9341_MADCTL)"), 1)
+        self.assertNotIn(
+            "ILI9341_MADCTL_MX | ILI9341_MADCTL_MY | ILI9341_MADCTL_MV | ILI9341_MADCTL_BGR",
+            low,
+        )
         self.assertNotIn(
             "writeData(ILI9341_MADCTL_MX | ILI9341_MADCTL_MV | ILI9341_MADCTL_BGR)",
             low,
@@ -206,9 +210,14 @@ class DualScreenContractTests(unittest.TestCase):
         self.assertIn("320", docs)
         self.assertIn("wipe", docs.lower())
         self.assertIn("Field retest", docs)
+        self.assertIn("0x28", docs)
+        self.assertIn("MV|BGR", docs)
         self.assertIn("0xE8", docs)
+        self.assertIn("0xA8", docs)
+        self.assertIn("0x68", docs)
         self.assertIn("MX|MY|MV|BGR", docs)
         self.assertIn("BLOCK TEMPLATES", docs)
+        self.assertIn("v2.2", docs)
         self.assertIn("v2.1b", docs)
         self.assertIn("not identical clones", docs)
         self.assertIn("nav/status only", docs)

@@ -1,4 +1,4 @@
-# Cardputer Adv dual-screen — Dirt routing contract v1 / v2 / v2.1b
+# Cardputer Adv dual-screen — Dirt routing contract v1 / v2 / v2.1b / v2.2
 
 INT **ST7789 240×135** is navigation. EXT **ILI9341 320×240** is mining.
 This is **not** a 1:1 blit of the built-in 240×135 frames onto the porkchop panel.
@@ -78,7 +78,7 @@ Optional flags on the dual env:
 | --- | --- |
 | `-DNERDMINER_DUAL_ASSUME_EXT=1` | Default. Porkchop pin list has no EXT MISO, so ID probe is best-effort. |
 | `-DNERDMINER_DUAL_FORCE_INT=1` | Force INT-only fallback (no EXT traffic). |
-| `-DEXT_TFT_MADCTL=0xA8` | Override boot MADCTL. Default is `MX|MY|MV|BGR` = `0xE8`. |
+| `-DEXT_TFT_MADCTL=0xE8` | Override boot MADCTL for A/B. Default is `MV|BGR` = `0x28` (no MX, no MY). Rollbacks: `0xE8`, `0xA8`, `0x68`. |
 
 ## Launcher (app-only `0xE9`)
 
@@ -137,11 +137,11 @@ On the dirt unit (porkchop EXT wired, dual bin, SD present):
 5. INT must keep the selected cyclic view in sync (stock miner/clock/network/price chrome, not a dual-HUD list). `r` rotate and `b` backlight stay on INT. Hold `KEY_BACKSPACE` still resets.
 6. Confirm boot still talks to SD (config load or “No config file” — no hang, no EXT-stuck-low SD fail).
 
-## Field retest (contract v2 / v2.1)
+## Field retest (contract v2 / v2.1 / v2.2)
 
 Same Launcher app-only flash as above. Wipe (v1) must stay **PASS**. Then:
 
-1. **EXT orientation:** MINING/CLOCK/NETWORK/PRICE on the porkchop must read left-to-right, not mirrored. MADCTL is boot-only `0xE8` (`MX|MY|MV|BGR`). Field photo on `0xA8` was still L/R mirrored.
+1. **EXT orientation (v2.2):** MINING/CLOCK/NETWORK/PRICE on the porkchop must read left-to-right, not mirrored or reversed. MADCTL is boot-only `0x28` (`MV|BGR`, no MX, no MY). Field FAIL on tip `976c96a` with boot `0xE8` (`MX|MY|MV|BGR`) — still mirrored/reversed. Prior field photo on `0xA8` was also L/R mirrored. A/B rollbacks: `-DEXT_TFT_MADCTL=0xE8` / `0xA8` / `0x68`.
 2. **Down key:** **Fn+`.`** moves MINING → CLOCK → NETWORK → PRICE. Bare `;` / `.` still next (v1.2). **Fn+`;`** prev. `p` / `,` / Backspace / G0 unchanged.
 3. **INT lag / dirty-only:** After nav, INT updates within about one monitor tick (~100 ms). No 1 Hz full V1 goods paint. No per-tick `fillSprite`.
 4. **Stock chrome (v2.1b):** INT looks like stock single-screen NerdMiner (logo, clock, BLOCK TEMPLATES / BEST DIFFICULTY / 32BITS SHARES / VALID BLOCKS, KH/s, uptime, gauge). EXT uses the same scheme at 320×240 with denser goods. Not identical clones.
@@ -155,5 +155,5 @@ If a wipe remains, note whether it is every second (redraw) or only around SD/bo
 - **SD + EXT:** If EXT CS is left low, SD enumerates fail. Boot always idles GPIO5 HIGH; `loadConfigFile` / `initSDcard` quiesce EXT first.
 - **LoRa / Hydra on the Grove/hat pins:** Do not stack with the porkchop.
 - **Color order:** Cheap ILI9341 modules may swap R/B. Driver uses BGR MADCTL; swap in `ili9341Ext.cpp` if a panel looks inverted.
-- **EXT orientation (v2.1 / HWbot):** MADCTL is written **once at boot**: `MX|MY|MV|BGR` = `0xE8`. Field on dirt porkchop: `MY|MV|BGR` (`0xA8`) was still left-to-right mirrored (text backwards). BGR kept. Do not rewrite mid-run. Override `-DEXT_TFT_MADCTL=` (e.g. `0xA8`) if a panel needs the previous byte.
+- **EXT orientation (v2.2):** MADCTL is written **once at boot**: `MV|BGR` = `0x28` (no MX, no MY). Field FAIL on `0xE8` (still mirrored/reversed). Earlier `0xA8` was also L/R mirrored. BGR kept. Do not rewrite mid-run. Override `-DEXT_TFT_MADCTL=` for A/B; rollbacks are `0xE8`, `0xA8`, `0x68`.
 - **Keyboard / Launcher:** Dual env still compiles TCA8418 v1.2 and the app-only export. Stock env is the safe path if you only want PR #1 behavior.
