@@ -64,6 +64,19 @@ Every time an stratum job notification is received miner update its current work
 - LILYGO T-HMI ([Aliexpress link\*](https://s.click.aliexpress.com/e/_oFII4s2)) / Dev support: @cosmicpsyop
 - ESP32-C3 0.42 Inch OLED ([Aliexpress link\*](https://s.click.aliexpress.com/e/_oDmT4Id) / Dev support: @mrthiti / ⚡ wallet@thiti.dev)
 - ESP32-S3 0.42 Inch OLED ([Aliexpress link\*](https://s.click.aliexpress.com/e/_oFIMUoh) / Dev support: @mrthiti / ⚡ wallet@thiti.dev)
+- M5Stack Cardputer Adv ([Board Info](https://docs.m5stack.com/en/core/Cardputer%20adv) / PlatformIO env `M5-Cardputer-Adv`, TCA8418 keyboard UI)
+
+#### Cardputer Adv + bmorcelli Launcher
+
+Flash Launcher for `m5stack-cardputer-adv` first, then install the **app-only** NerdMiner image (ESP magic `0xE9`) from SD/OTA. Do **not** flash the merged `*_factory.bin` through Launcher — that image starts at `0x0` and wipes Launcher.
+
+```bash
+pio run -e M5-Cardputer-Adv
+python3 scripts/export_launcher_bin.py
+# artifact: firmware/launcher/NerdMiner_v2_M5-Cardputer-Adv.bin
+```
+
+Keyboard map, install steps, and artifact paths: [docs/cardputer-adv-launcher.md](docs/cardputer-adv-launcher.md).
 
 \*Affiliate links
 
@@ -169,6 +182,17 @@ Other standard pools not compatible with low difficulty share:
 - Double click > change screen orientation.
 - Tripple click > turn the screen off and on again.
 - Hold 5 seconds > **reset the configurations and reboot** your NerdMiner.
+
+#### M5Stack Cardputer Adv (TCA8418 keyboard)
+
+G0 still behaves as a one-button device. The 56-key keyboard also drives the UI:
+
+- Enter / Space / `n` / `.` / `/` > next screen
+- `p` / `,` / `;` / Backspace > previous screen
+- `1`–`4` > jump to a cyclic screen
+- `r` > rotate; `b` / Tab / Fn+\` > backlight
+- Hold `x` 5 seconds > reset configuration
+- Hold Enter, `c`, or `w` at boot > Wi‑Fi config portal
 
 #### Two button devices:
 

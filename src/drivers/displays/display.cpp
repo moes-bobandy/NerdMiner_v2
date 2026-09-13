@@ -111,6 +111,26 @@ void switchToNextScreen()
   currentDisplayDriver->current_cyclic_screen = (currentDisplayDriver->current_cyclic_screen + 1) % currentDisplayDriver->num_cyclic_screens;
 }
 
+// Switches to the previous cyclic screen without drawing it
+void switchToPrevScreen()
+{
+  if (currentDisplayDriver->num_cyclic_screens <= 0) {
+    return;
+  }
+  currentDisplayDriver->current_cyclic_screen =
+      (currentDisplayDriver->current_cyclic_screen + currentDisplayDriver->num_cyclic_screens - 1) %
+      currentDisplayDriver->num_cyclic_screens;
+}
+
+// Jump to a cyclic screen by index (0-based). Out-of-range values are ignored.
+void switchToScreen(int index)
+{
+  if (index < 0 || index >= currentDisplayDriver->num_cyclic_screens) {
+    return;
+  }
+  currentDisplayDriver->current_cyclic_screen = index;
+}
+
 // Draw the current cyclic screen
 void drawCurrentScreen(unsigned long mElapsed)
 {
