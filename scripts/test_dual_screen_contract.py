@@ -77,7 +77,12 @@ class DualScreenContractTests(unittest.TestCase):
         driver = read("src/drivers/displays/ili9341ExtDriver.cpp")
         self.assertIn("enterExtScreen", driver)
         self.assertIn("s_extScreen", driver)
-        # Periodic 1 Hz path must not unconditionally wipe the panel.
+        self.assertIn("takeField", driver)
+        self.assertIn("dirty7Seg", driver)
+        self.assertIn("dirtyStat", driver)
+        self.assertNotIn("static void fillContentBand", driver)
+        # Full clear lives only in enterExtScreen (screen-index change).
+        self.assertEqual(driver.count("ili9341ExtFillScreen("), 1)
         for name in (
             "extMinerScreen",
             "extClockScreen",
@@ -93,7 +98,14 @@ class DualScreenContractTests(unittest.TestCase):
         self.assertIn("extSpi.begin(EXT_TFT_SCK, EXT_TFT_MISO, EXT_TFT_MOSI, -1)", low)
         self.assertIn("sdCsIdle", low)
         self.assertNotIn("while (count--)", low)
-        self.assertIn("GRAM is retained", read("src/drivers/displays/nerdMinerDual.cpp"))
+        self.assertIn("ili9341ExtBeginFrame", low)
+        self.assertIn("while (s_frame > 0)", low)
+        dual = read("src/drivers/displays/nerdMinerDual.cpp")
+        self.assertIn("GRAM is retained", dual)
+        self.assertIn("nerd_ext_begin_frame", dual)
+        disp = read("src/drivers/displays/display.cpp")
+        self.assertIn("nerd_ext_begin_frame()", disp)
+        self.assertIn("nerd_ext_end_frame()", disp)
 
     def test_docs_and_launcher_recipe(self) -> None:
         docs = read("docs/cardputer-adv-dual-screen.md")

@@ -23,10 +23,21 @@ static bool g_ext = false;
 
 void nerd_quiesce_ext()
 {
-    // GPIO5 HIGH only. ILI9341 GRAM is retained; this must not blank the panel.
+    // GPIO5 HIGH only, and only between complete EXT frames.
+    // ILI9341 GRAM is retained; this must not blank the panel.
+    ili9341ExtQuiesce();
     pinMode(EXT_TFT_CS, OUTPUT);
     digitalWrite(EXT_TFT_CS, HIGH);
-    ili9341ExtQuiesce();
+}
+
+void nerd_ext_begin_frame()
+{
+    ili9341ExtBeginFrame();
+}
+
+void nerd_ext_end_frame()
+{
+    ili9341ExtEndFrame();
 }
 
 DisplayDriver *nerd_nav()

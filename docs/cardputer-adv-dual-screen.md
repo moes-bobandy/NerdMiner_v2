@@ -96,23 +96,20 @@ python3 scripts/export_launcher_bin.py --env M5-Cardputer-Adv-dual
 
 `runMonitor()` refreshes mining screens at ~1 Hz (`mining.cpp` when `mElapsed >= 1000`).
 
-The porkchop ILI9341 is written in scan order (CASET/PASET + `RAMWR`). A full-panel `ili9341ExtFillScreen()` on every tick therefore looks like a **slow top-down dark wipe** over the previous frame:
-
-- 320×240 = 76 800 pixels
-- C_BG is `0x1082` (near-black)
-- The first driver pushed that fill with per-byte `SPI.transfer()`, so the wipe was visible for a large fraction of the second
+**Root cause (Dirt film-slide):** every cyclic EXT screen used to start with `ili9341ExtFillScreen(C_BG)` (`C_BG = 0x1082`, near-black). That is a full 320×240 `RAMWR` in scan order, then the same widgets are painted back. Field look: a continuous top-down black band that blanks and restores **stable** graphics — not random sparkle.
 
 INT V1 does not do this: it composes in a sprite and `pushSprite`s once.
 
-`nerd_quiesce_ext()` only idles EXT CS (GPIO5 **HIGH**). ILI9341 GRAM is retained — SD I/O must not blank the panel. SD is used at boot (`initSDcard` / `loadConfigFile`) then `terminate()`; there is no periodic SD traffic during hashing.
+`nerd_quiesce_ext()` only idles EXT CS (GPIO5 **HIGH**) and now waits until `nerd_ext_end_frame()`. ILI9341 GRAM is retained. SD is boot-time (`initSDcard` / `loadConfigFile`) then `terminate()`.
 
-Fixes in this tree:
+Locked redraw rules:
 
-- Full `fillScreen` only when the cyclic view changes (`;` / `p` / `,`)
-- Periodic updates paint header / footer / stat cells / value bands in place
-- Pixel bursts use `SPI.writeBytes` (not per-byte `transfer`)
-- EXT SPI `begin(..., ss=-1)` so GPIO5 is not the HSPI hardware SS (SD uses GPIO12)
-- Before each EXT transaction, SD CS (GPIO12) is held HIGH
+- **Ban** full clear on steady cyclic refresh
+- Full `fillScreen` **only** when the cyclic screen index changes
+- Live stats = dirty-field updates (no `fillContentBand`, no mid-frame blank)
+- `nerd_quiesce_ext` only between complete frames
+
+Also: pixel bursts use `SPI.writeBytes`; EXT `begin(..., ss=-1)`; SD CS held HIGH during EXT transactions.
 
 ## Field retest (EXT wipe)
 

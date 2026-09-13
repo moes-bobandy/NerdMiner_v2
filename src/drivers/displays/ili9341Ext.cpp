@@ -353,9 +353,28 @@ static void sendInit()
     endTxn();
 }
 
+static volatile int s_frame = 0;
+
+void ili9341ExtBeginFrame()
+{
+    s_frame++;
+}
+
+void ili9341ExtEndFrame()
+{
+    if (s_frame > 0) {
+        s_frame--;
+    }
+    extCsIdle();
+}
+
 void ili9341ExtQuiesce()
 {
-    // Deselect EXT only. SD owns GPIO12 for its own transactions.
+    // Only between complete frames. Raising CS mid-RAMWR leaves a partial
+    // top-down black scan over still-valid GRAM (Dirt film-slide).
+    while (s_frame > 0) {
+        delay(1);
+    }
     extCsIdle();
 }
 

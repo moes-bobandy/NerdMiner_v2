@@ -154,8 +154,12 @@ void drawCurrentScreen(unsigned long mElapsed)
   if (idx < 0 || idx >= mining->num_cyclic_screens) {
     idx = 0;
   }
+#ifdef NERDMINER_DUAL_SCREEN
+  nerd_ext_begin_frame();
+#endif
   mining->cyclic_screens[idx](mElapsed);
 #ifdef NERDMINER_DUAL_SCREEN
+  nerd_ext_end_frame();
   if (nerd_ext_available()) {
     nerd_draw_int_nav_hud(idx, mElapsed);
   }
