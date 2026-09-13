@@ -1,6 +1,7 @@
 #ifndef NERD_MINER_DUAL_H
 #define NERD_MINER_DUAL_H
 
+#include <stdint.h>
 #include "displayDriver.h"
 
 // Dirt-approved dual routing contract v1
