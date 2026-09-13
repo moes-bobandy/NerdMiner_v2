@@ -8,6 +8,7 @@
 #include "monitor.h"
 #include "version.h"
 #include "drivers/devices/device.h"
+#include "media/images_240_135.h"
 
 #if TFT_MOSI != 35 || TFT_SCLK != 36 || TFT_CS != 37 || TFT_DC != 34 || TFT_RST != 33 || TFT_BL != 38
 #error "Dirt contract v1: INT ST7789 must stay Setup215 MOSI35 SCLK36 CS37 DC34 RST33 BL38"
@@ -71,63 +72,112 @@ void nerd_dual_init()
     nerd_quiesce_ext();
 }
 
+static volatile bool s_intDirty = true;
+static int s_intDrawn = -1;
+static uint8_t s_intStatus = 0xFF;
+
+static const char *intStatusLabel(uint16_t *color)
+{
+    if (mMonitor.NerdStatus == NM_hashing) {
+        *color = 0x07E0;
+        return "HASHING";
+    }
+    if (mMonitor.NerdStatus == NM_Connecting) {
+        *color = 0x07FF;
+        return "WIFI";
+    }
+    if (mMonitor.NerdStatus == NM_waitingConfig) {
+        *color = 0xFD20;
+        return "SETUP";
+    }
+    *color = 0xFDA0;
+    return "WAIT";
+}
+
+static void pushStockCyclicChrome(int screenIndex)
+{
+    // Same 240x135 bitmaps as stock tDisplayV1 cyclic screens — INT is the
+    // menu/chooser, not a dual-HUD list. Live mining goods stay on EXT.
+    switch (screenIndex) {
+    case 1:
+        background.pushImage(0, 0, minerClockWidth, minerClockHeight, minerClockScreen);
+        break;
+    case 2:
+        background.pushImage(0, 0, globalHashWidth, globalHashHeight, globalHashScreen);
+        break;
+    case 3:
+        background.pushImage(0, 0, priceScreenWidth, priceScreenHeight, priceScreen);
+        break;
+    default:
+        background.pushImage(0, 0, MinerWidth, MinerHeight, MinerScreen);
+        break;
+    }
+}
+
+static void drawStockMenuStrip(int screenIndex, const char *status, uint16_t statusColor)
+{
+    static const char *names[] = {"MINING", "CLOCK", "NETWORK", "PRICE"};
+    background.fillRect(0, 109, 240, 26, 0x2104);
+    background.drawFastHLine(0, 109, 240, 0xDEDB);
+    background.setTextDatum(TL_DATUM);
+    background.setTextFont(2);
+    background.setTextSize(1);
+    background.setTextColor(0xDEDB, 0x2104);
+    background.drawString(names[screenIndex], 6, 111);
+    for (int i = 0; i < 4; ++i) {
+        background.fillCircle(88 + i * 12, 118, 3, (i == screenIndex) ? 0xFD20 : 0x4A49);
+    }
+    background.setTextDatum(TR_DATUM);
+    background.setTextColor(statusColor, 0x2104);
+    background.drawString(status, 234, 111);
+    background.setTextDatum(TL_DATUM);
+    background.setTextColor(0x9C92, 0x2104);
+    background.drawString(";/dn next  p/, prev", 6, 123);
+}
+
+void nerd_mark_int_nav_dirty()
+{
+    s_intDirty = true;
+}
+
+void nerd_poll_int_nav()
+{
+    if (!g_ext || !s_intDirty) {
+        return;
+    }
+    nerd_draw_int_nav_hud(nerd_nav()->current_cyclic_screen, 0);
+}
+
 void nerd_draw_int_nav_hud(int screenIndex, unsigned long mElapsed)
 {
     (void)mElapsed;
-    static const char *names[] = {"MINING", "CLOCK", "NETWORK", "PRICE"};
     const int n = 4;
     if (screenIndex < 0 || screenIndex >= n) {
         screenIndex = 0;
     }
 
-    background.fillSprite(TFT_BLACK);
-    background.fillRect(0, 0, 240, 22, 0x2104);
-    background.setTextDatum(TL_DATUM);
-    background.setTextColor(0xDEDB, 0x2104);
-    background.setTextFont(2);
-    background.setTextSize(1);
-    background.drawString("NAV  INT ST7789", 6, 4);
-    background.setTextColor(0x7BEF, 0x2104);
-    background.drawString(CURRENT_VERSION, 190, 4);
-
-    const char *status = "WAIT";
     uint16_t statusColor = 0xFDA0;
-    if (mMonitor.NerdStatus == NM_hashing) {
-        status = "HASHING";
-        statusColor = 0x07E0;
-    } else if (mMonitor.NerdStatus == NM_Connecting) {
-        status = "WIFI";
-        statusColor = 0x07FF;
-    } else if (mMonitor.NerdStatus == NM_waitingConfig) {
-        status = "SETUP";
-        statusColor = 0xFD20;
+    const char *status = intStatusLabel(&statusColor);
+    const uint8_t statusId = (uint8_t)mMonitor.NerdStatus;
+    const bool viewChanged = (screenIndex != s_intDrawn);
+    const bool statusChanged = (statusId != s_intStatus);
+
+    // Throttle: skip identical 1 Hz ticks. Full stock bitmap only on view change.
+    if (!s_intDirty && !viewChanged && !statusChanged) {
+        return;
     }
 
-    background.setTextColor(0x9C92, TFT_BLACK);
-    background.drawString("View", 8, 28);
-    for (int i = 0; i < n; ++i) {
-        const int y = 46 + i * 16;
-        if (i == screenIndex) {
-            background.fillRect(6, y - 2, 228, 16, 0x3186);
-            background.setTextColor(0xDEDB, 0x3186);
-            background.drawString(">", 10, y);
-            background.drawString(names[i], 24, y);
-            background.drawString("EXT", 190, y);
-        } else {
-            background.setTextColor(0x7BEF, TFT_BLACK);
-            background.drawString(names[i], 24, y);
-        }
+    if (viewChanged || s_intDrawn < 0) {
+        pushStockCyclicChrome(screenIndex);
+        drawStockMenuStrip(screenIndex, status, statusColor);
+    } else {
+        drawStockMenuStrip(screenIndex, status, statusColor);
     }
-
-    background.drawFastHLine(0, 112, 240, 0x3186);
-    background.setTextColor(statusColor, TFT_BLACK);
-    background.drawString(status, 8, 116);
-    background.setTextColor(0x9C92, TFT_BLACK);
-    background.drawString("; next  p prev", 70, 116);
-    background.setTextColor(0x7BEF, TFT_BLACK);
-    background.drawString("r rot  b bl  hold BKSP reset", 8, 128);
 
     background.pushSprite(0, 0);
+    s_intDrawn = screenIndex;
+    s_intStatus = statusId;
+    s_intDirty = false;
 }
 
 #endif // NERDMINER_DUAL_SCREEN

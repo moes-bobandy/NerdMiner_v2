@@ -28,13 +28,26 @@
 #define KEY_CTRL      0x80
 #define KEY_ALT       0x82
 #define KEY_OPT       0x00
+// Arduino/HID-style arrows (uint8_t map — signed char would break 0xD9/0xFF compares).
+#define KEY_RIGHT     0xD7
+#define KEY_LEFT      0xD8
+#define KEY_DOWN      0xD9
+#define KEY_UP        0xDA
 
-// M5Cardputer 4x14 base-layer map (value_first).
-static const char kKeyMap[4][14] = {
-    {'`', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', (char)KEY_BACKSPACE},
-    {(char)KEY_TAB, 'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', '[', ']', '\\'},
-    {(char)KEY_FN, (char)KEY_SHIFT, 'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';', '\'', (char)KEY_ENTER},
-    {(char)KEY_CTRL, (char)KEY_OPT, (char)KEY_ALT, 'z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/', ' '},
+// Adv captured FIFO (kamrrillo / MultiMote): ↓=58 ←=54 ↑=57 →=64
+#define ADV_RAW_UP    57
+#define ADV_RAW_LEFT  54
+#define ADV_RAW_DOWN  58
+#define ADV_RAW_RIGHT 64
+
+// Adv 4x14: printed ↓ sits on the '.' position (raw 58). Emit KEY_DOWN so
+// Down navigates down (+1). ';' stays next (contract v1.2). uint8_t map
+// avoids signed-char KEY_FN/KEY_DOWN compare bugs.
+static const uint8_t kKeyMap[4][14] = {
+    {'`', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', KEY_BACKSPACE},
+    {KEY_TAB, 'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', '[', ']', '\\'},
+    {KEY_FN, KEY_SHIFT, 'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';', '\'', KEY_ENTER},
+    {KEY_CTRL, KEY_OPT, KEY_ALT, 'z', 'x', 'c', 'v', 'b', 'n', 'm', ',', KEY_DOWN, '/', ' '},
 };
 
 static bool g_available = false;
@@ -66,19 +79,37 @@ static bool readReg(uint8_t reg, uint8_t *value)
     return true;
 }
 
-// Cardputer Adv electrical 7x8 -> physical 4x14 (Bruce / M5Cardputer / rust crate).
-// TCA8418 keycode: bits 0-6 = 10*row + col + 1
+// TCA8418: keycode = 10*row + col + 1 (TI SLVSAL4). Adv is 7x8.
+// Remap is M5Cardputer-UserDemo / xiaozhi CardputerADV (7x8 -> 4x14).
 static bool mapRawToPhysical(uint8_t keycode, uint8_t *row, uint8_t *col)
 {
-    const uint8_t u = keycode % 10; // 1..8
-    const uint8_t t = keycode / 10; // 0..6
-    if (u < 1 || u > 8 || t > 6) {
+    if (keycode < 1) {
         return false;
     }
-    const uint8_t u0 = (uint8_t)(u - 1);
-    *row = u0 & 0x03;
-    *col = (uint8_t)((t << 1) | (u0 >> 2));
+    const uint8_t raw_row = (uint8_t)((keycode - 1) / 10); // 0..6
+    const uint8_t raw_col = (uint8_t)((keycode - 1) % 10); // 0..7
+    if (raw_row > 6 || raw_col > 7) {
+        return false;
+    }
+    *col = (uint8_t)((raw_row * 2) + ((raw_col > 3) ? 1 : 0));
+    *row = (uint8_t)((raw_col + 4) % 4);
     return *row < 4 && *col < 14;
+}
+
+static uint8_t advArrowFromRaw(uint8_t keycode)
+{
+    switch (keycode) {
+    case ADV_RAW_DOWN:
+        return KEY_DOWN;
+    case ADV_RAW_UP:
+        return KEY_UP;
+    case ADV_RAW_LEFT:
+        return KEY_LEFT;
+    case ADV_RAW_RIGHT:
+        return KEY_RIGHT;
+    default:
+        return 0;
+    }
 }
 
 static void flushFifo()
@@ -92,7 +123,7 @@ static void flushFifo()
     writeReg(TCA8418_REG_INT_STAT, 0x03);
 }
 
-static void dispatchChar(char key)
+static void dispatchKey(uint8_t key)
 {
     const uint32_t now = millis();
     if ((now - g_lastNavMs) < 180) {
@@ -100,14 +131,19 @@ static void dispatchChar(char key)
     }
     g_lastNavMs = now;
 
-    if (key == KEY_ENTER || key == ' ' || key == 'n' || key == '.' || key == '/' || key == ';') {
-        Serial.println(F("Cardputer KB: next screen"));
+    // Down / right / ';' (contract v1.2) / . / / / enter / space / n = next.
+    // KEY_DOWN is the printed Adv ↓ (raw 58). Delta is +1 (down the cyclic list).
+    if (key == KEY_DOWN || key == KEY_RIGHT || key == KEY_ENTER ||
+        key == ' ' || key == 'n' || key == '.' || key == '/' || key == ';') {
+        Serial.println(key == KEY_DOWN ? F("Cardputer KB: down / next screen")
+                                       : F("Cardputer KB: next screen"));
         switchToNextScreen();
         return;
     }
-    // Prev is p / comma only. Short KEY_BACKSPACE tap is handled on release.
-    if (key == 'p' || key == ',') {
-        Serial.println(F("Cardputer KB: previous screen"));
+    // Up / left / p / comma = prev. Short KEY_BACKSPACE tap is handled on release.
+    if (key == KEY_UP || key == KEY_LEFT || key == 'p' || key == ',') {
+        Serial.println(key == KEY_UP ? F("Cardputer KB: up / previous screen")
+                                     : F("Cardputer KB: previous screen"));
         switchToPrevScreen();
         return;
     }
@@ -132,11 +168,16 @@ static void handleEvent(uint8_t raw)
     const bool pressed = (raw & 0x80) != 0;
     const uint8_t keycode = raw & 0x7F;
     uint8_t row = 0xFF, col = 0xFF;
-    if (!mapRawToPhysical(keycode, &row, &col)) {
-        return;
+    uint8_t key = 0;
+    if (mapRawToPhysical(keycode, &row, &col)) {
+        key = kKeyMap[row][col];
+    } else {
+        // Field-captured Adv FIFO (↓=58) if the 7x8 remap ever misses.
+        key = advArrowFromRaw(keycode);
+        if (key == 0) {
+            return;
+        }
     }
-
-    const char key = kKeyMap[row][col];
 
     if (key == KEY_FN) {
         g_fn = pressed;
@@ -144,7 +185,7 @@ static void handleEvent(uint8_t raw)
     }
 
     // KEY_BACKSPACE (HID 0x2A): hold 5s = reset config; short tap = prev.
-    if ((uint8_t)key == KEY_BACKSPACE) {
+    if (key == KEY_BACKSPACE) {
         if (pressed) {
             if (!g_resetHeld) {
                 g_resetHeld = true;
@@ -169,8 +210,20 @@ static void handleEvent(uint8_t raw)
         return;
     }
 
-    // Fn + arrows: ';' and '.' '/' are next; ',' is prev.
-    dispatchChar(key);
+    // Fn layer restores punctuation on the printed arrow keys.
+    if (g_fn) {
+        if (key == KEY_UP) {
+            key = ';';
+        } else if (key == KEY_LEFT) {
+            key = ',';
+        } else if (key == KEY_DOWN) {
+            key = '.';
+        } else if (key == KEY_RIGHT) {
+            key = '/';
+        }
+    }
+
+    dispatchKey(key);
 }
 
 bool cardputerKeyboardBegin()
@@ -213,7 +266,7 @@ bool cardputerKeyboardBegin()
         const bool pressed = (ev & 0x80) != 0;
         uint8_t row = 0xFF, col = 0xFF;
         if (pressed && mapRawToPhysical((uint8_t)(ev & 0x7F), &row, &col)) {
-            const char key = kKeyMap[row][col];
+            const uint8_t key = kKeyMap[row][col];
             if (key == KEY_ENTER || key == 'c' || key == 'w') {
                 g_wantsConfig = true;
             }

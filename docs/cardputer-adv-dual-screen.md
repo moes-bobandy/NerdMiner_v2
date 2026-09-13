@@ -1,4 +1,4 @@
-# Cardputer Adv dual-screen — Dirt routing contract v1
+# Cardputer Adv dual-screen — Dirt routing contract v1 / v2
 
 INT **ST7789 240×135** is navigation. EXT **ILI9341 320×240** is mining.
 This is **not** a 1:1 blit of the built-in 240×135 frames onto the porkchop panel.
@@ -9,11 +9,11 @@ Stock PlatformIO env `M5-Cardputer-Adv` is unchanged (keyboard + Launcher path f
 
 | Surface | API | Hardware | Content |
 | --- | --- | --- | --- |
-| INT nav | `nerd_nav()` | ST7789 via stock TFT_eSPI **Setup215** / `tDisplayV1Driver` | Keyboard + G0 cyclic nav, loading, setup, Wi‑Fi portal. Backlight and rotate stay here. |
+| INT nav | `nerd_nav()` | ST7789 via stock TFT_eSPI **Setup215** / `tDisplayV1Driver` | Keyboard + G0 cyclic nav, stock 240×135 menu chrome, loading, setup, Wi‑Fi portal. Backlight and rotate stay here. |
 | EXT mining | `nerd_mining()` | ILI9341 320×240 on HSPI | Hashrate / stats / clock / network / price at **native** 320×240, themed to match NerdMiner (cream `0xDEDB`, orange hashrate, dark panels). |
 | Fallback | `nerd_mining()` → `nerd_nav()` | INT only | EXT init fail or `-DNERDMINER_DUAL_FORCE_INT=1`. Full V1 cyclic screens on INT, same as stock. |
 
-When EXT is up, INT draws a compact **NAV HUD** (current view + key hints) instead of the 240×135 mining bitmaps.
+When EXT is up, INT shows the **stock NerdMiner cyclic chrome** (same 240×135 miner / clock / network / price bitmaps) as the navigation menu, plus a slim cream/orange strip (view name, page pips, key hints). Live mining numbers stay on EXT. INT is **not** a dual-HUD-only list.
 
 ## Pins (locked)
 
@@ -53,7 +53,7 @@ Rules:
 - After `SDCard::terminate()`, HSPI stays up so mining can keep using EXT.
 - Cap **LoRa / Hydra** Units use G5 / G3 / G6. They are **mutually exclusive** with the porkchop. Building dual with `HAS_LORA` / `HYDRA` is a compile error.
 
-**TCA8418** (unchanged v1.2): I2C `0x34`, SDA=8, SCL=9, INT=11. `;` next; `p` / `,` prev; long `KEY_BACKSPACE` `0x2A` reset.
+**TCA8418** (v1.2 + v2 Down): I2C `0x34`, SDA=8, SCL=9, INT=11. `;` next; printed **↓** (raw FIFO `58`, `KEY_DOWN`) next (down the cyclic list, +1); `p` / `,` prev; long `KEY_BACKSPACE` `0x2A` reset.
 
 ## Build
 
@@ -128,8 +128,17 @@ On the dirt unit (porkchop EXT wired, dual bin, SD present):
 2. Leave MINING on EXT for at least 60 seconds. Hashrate / shares / uptime should update **in place**. There must be **no** repeating top-down black (or near-black) wipe.
 3. Press `;` to CLOCK, then NETWORK, then PRICE. A single fast flash on the switch is OK. After the new view is up, it must stay stable between 1 Hz updates.
 4. Press `p` or `,` to walk back. Same: no periodic wipe.
-5. INT HUD must keep the highlighted view in sync. `r` rotate and `b` backlight stay on INT. Hold `KEY_BACKSPACE` still resets.
+5. INT must keep the selected cyclic view in sync (stock miner/clock/network/price chrome, not a dual-HUD list). `r` rotate and `b` backlight stay on INT. Hold `KEY_BACKSPACE` still resets.
 6. Confirm boot still talks to SD (config load or “No config file” — no hang, no EXT-stuck-low SD fail).
+
+## Field retest (contract v2)
+
+Same Launcher app-only flash as above. Wipe (v1) must stay **PASS**. Then:
+
+1. **EXT orientation:** MINING/CLOCK/NETWORK/PRICE on the porkchop must read left-to-right, not mirrored. 7-seg digits and labels the right way around.
+2. **Down key:** Press the printed **↓** (TCA8418 raw `58`). INT page pips / stock chrome must move MINING → CLOCK → NETWORK → PRICE. `;` still next. `p` / `,` still prev.
+3. **INT lag:** After ↓ or `;`, the INT menu must change within about one monitor tick (~100 ms), not wait for the 1 Hz EXT refresh. No full INT clear every second.
+4. **Stock chrome:** INT looks like the original NerdMiner cyclic screens (bitmaps + cream/orange strip). EXT still holds the mining goods.
 
 If a wipe remains, note whether it is every second (redraw) or only around SD/boot (bus). Serial `>>> EXT miner|clock|global|price` marks each 1 Hz paint.
 
@@ -140,4 +149,5 @@ If a wipe remains, note whether it is every second (redraw) or only around SD/bo
 - **SD + EXT:** If EXT CS is left low, SD enumerates fail. Boot always idles GPIO5 HIGH; `loadConfigFile` / `initSDcard` quiesce EXT first.
 - **LoRa / Hydra on the Grove/hat pins:** Do not stack with the porkchop.
 - **Color order:** Cheap ILI9341 modules may swap R/B. Driver uses BGR MADCTL; swap in `ili9341Ext.cpp` if a panel looks inverted.
+- **EXT orientation (v2):** MADCTL is TFT_eSPI rotation 1 (`MV|BGR` = `0x28`). The wipe-fix bin used `MX|MV|BGR` (rotation 5, mirrored landscape) — that was the reversed EXT field fail. Override `-DEXT_TFT_MADCTL=0xE8` (`MX|MY|MV|BGR`, rotation 3) only if a panel is mounted 180°.
 - **Keyboard / Launcher:** Dual env still compiles TCA8418 v1.2 and the app-only export. Stock env is the safe path if you only want PR #1 behavior.

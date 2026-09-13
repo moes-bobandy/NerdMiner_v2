@@ -42,6 +42,13 @@
 #define ILI9341_MADCTL_MV  0x20
 #define ILI9341_MADCTL_BGR 0x08
 
+// TFT_eSPI ILI9341 rotation 1 (landscape). MX|MV|BGR is rotation 5 — a
+// bottom-up / mirrored landscape. That was the Dirt field fail (EXT
+// graphics reversed). Rotation 3 (MX|MY|MV|BGR) if a panel is 180° mounted.
+#ifndef EXT_TFT_MADCTL
+#define EXT_TFT_MADCTL (ILI9341_MADCTL_MV | ILI9341_MADCTL_BGR)
+#endif
+
 #ifndef EXT_TFT_SPI_HZ
 #define EXT_TFT_SPI_HZ 20000000
 #endif
@@ -299,7 +306,7 @@ static void sendInit()
     writeData(0x86);
     // Landscape 320x240. Rotate stays on INT per contract.
     writeCommand(ILI9341_MADCTL);
-    writeData(ILI9341_MADCTL_MX | ILI9341_MADCTL_MV | ILI9341_MADCTL_BGR);
+    writeData(EXT_TFT_MADCTL);
     writeCommand(ILI9341_PIXFMT);
     writeData(0x55);
     writeCommand(ILI9341_FRMCTR1);
