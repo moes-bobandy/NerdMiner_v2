@@ -159,10 +159,10 @@ def create_merged_firmware(source, target, env):
             shown = magic.hex() if magic else "empty"
             print(f"⚠️  Unexpected firmware magic 0x{shown} (expected 0xE9 ESP app image)")
 
-        if env_name == "M5-Cardputer-Adv":
+        if env_name in ("M5-Cardputer-Adv", "M5-Cardputer-Adv-dual"):
             launcher_dir = project_dir / "firmware" / "launcher"
             launcher_dir.mkdir(parents=True, exist_ok=True)
-            launcher_file = launcher_dir / "NerdMiner_v2_M5-Cardputer-Adv.bin"
+            launcher_file = launcher_dir / f"NerdMiner_v2_{env_name}.bin"
             shutil.copy2(firmware_file, launcher_file)
             print(f"✅ Launcher app-only bin: {launcher_file}")
             print("   Install via bmorcelli Launcher SD/OTA. Do NOT flash the factory merge")

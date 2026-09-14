@@ -7,7 +7,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from export_launcher_bin import ESP_IMAGE_MAGIC, MERGED_APP_OFFSET, export_app_bin
+from export_launcher_bin import (
+    ESP_IMAGE_MAGIC,
+    LAUNCHER_ENVS,
+    MERGED_APP_OFFSET,
+    export_app_bin,
+)
 
 
 class ExportLauncherBinTests(unittest.TestCase):
@@ -46,6 +51,11 @@ class ExportLauncherBinTests(unittest.TestCase):
             src.write_bytes(blob)
             self.assertEqual(export_app_bin(src, dst), 1)
             self.assertFalse(dst.exists())
+
+    def test_launcher_envs_cover_stock_and_dual(self) -> None:
+        self.assertIn("M5-Cardputer-Adv", LAUNCHER_ENVS)
+        self.assertIn("M5-Cardputer-Adv-dual", LAUNCHER_ENVS)
+        self.assertTrue(LAUNCHER_ENVS["M5-Cardputer-Adv-dual"].endswith("-dual.bin"))
 
 
 if __name__ == "__main__":

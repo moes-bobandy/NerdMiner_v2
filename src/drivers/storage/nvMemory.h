@@ -16,8 +16,18 @@ public:
     bool saveConfig(TSettings* Settings);
     bool loadConfig(TSettings* Settings);
     bool deleteConfig();
+    /// Sticky SPIFFS flag so Backspace-5s wipe re-enters the portal next boot
+    /// even if an SD config.json is present (SD fallback still works without it).
+    bool armForcePortal();
+    bool consumeForcePortal();
+    /// One-shot after portal save: ignore Enter/C/W/G0 and try STA first.
+    /// Armed in NVS + RTC + SPIFFS so a Launcher SPIFFS remount/format cannot
+    /// drop the latch (v1.1 /sta_first-only still bounced on dirt).
+    bool armStaFirst();
+    bool peekStaFirst();
+    bool consumeStaFirst();
 private:
-    bool init();
+    bool init(bool formatIfNeeded = true);
     bool Initialized_;
 };
 

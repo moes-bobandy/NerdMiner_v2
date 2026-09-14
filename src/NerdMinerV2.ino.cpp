@@ -122,10 +122,30 @@ void setup()
   
   /******** PRINT INIT SCREEN *****/
   drawLoadingScreen();
+#ifdef M5_CARDPUTER_ADV
+  // Dual EXT init already ran. Keyboard begin already peeked STA-first
+  // (NVS/RTC/SPIFFS) before drainFifo so leftover Enter cannot latch.
+  // If the latch is armed, ignore keys and keep the loading/Connecting splash.
+  if (nvMem.peekStaFirst()) {
+    cardputerKeyboardIgnoreForcePortal();
+    delay(2 * SECOND_MS);
+  } else {
+    const unsigned long until = millis() + 2 * SECOND_MS;
+    while ((long)(until - millis()) > 0) {
+      cardputerKeyboardPollConfigHeld();
+      delay(50);
+    }
+  }
+#else
   delay(2*SECOND_MS);
+#endif
 
   /******** SHOW LED INIT STATUS (devices without screen) *****/
+#ifdef M5_CARDPUTER_ADV
+  mMonitor.NerdStatus = nvMem.peekStaFirst() ? NM_Connecting : NM_waitingConfig;
+#else
   mMonitor.NerdStatus = NM_waitingConfig;
+#endif
   doLedStuff(0);
 
 #ifdef SDMMC_1BIT_FIX

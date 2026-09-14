@@ -4,6 +4,7 @@
 
 #include <Wire.h>
 
+#include "drivers/devices/device.h"
 #include "drivers/displays/display.h"
 #include "wManager.h"
 
@@ -27,17 +28,32 @@
 #define KEY_CTRL      0x80
 #define KEY_ALT       0x82
 #define KEY_OPT       0x00
+// Arduino/HID-style arrows (uint8_t map — signed char would break 0xD9/0xFF compares).
+#define KEY_RIGHT     0xD7
+#define KEY_LEFT      0xD8
+#define KEY_DOWN      0xD9
+#define KEY_UP        0xDA
 
-// M5Cardputer 4x14 base-layer map (value_first).
-static const char kKeyMap[4][14] = {
-    {'`', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', (char)KEY_BACKSPACE},
-    {(char)KEY_TAB, 'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', '[', ']', '\\'},
-    {(char)KEY_FN, (char)KEY_SHIFT, 'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';', '\'', (char)KEY_ENTER},
-    {(char)KEY_CTRL, (char)KEY_OPT, (char)KEY_ALT, 'z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/', ' '},
+// Adv captured FIFO (kamrrillo / MultiMote): ↓=58 ←=54 ↑=57 →=64
+#define ADV_RAW_UP    57
+#define ADV_RAW_LEFT  54
+#define ADV_RAW_DOWN  58
+#define ADV_RAW_RIGHT 64
+
+// Adv 4x14 value_first. Arrows are Fn-layer (HWbot): Fn+. = Down, Fn+; = Up.
+// Bare ';' / '.' stay v1.2 next. uint8_t avoids signed-char KEY_FN compares.
+static const uint8_t kKeyMap[4][14] = {
+    {'`', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', KEY_BACKSPACE},
+    {KEY_TAB, 'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', '[', ']', '\\'},
+    {KEY_FN, KEY_SHIFT, 'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';', '\'', KEY_ENTER},
+    {KEY_CTRL, KEY_OPT, KEY_ALT, 'z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/', ' '},
 };
 
 static bool g_available = false;
 static bool g_wantsConfig = false;
+static bool g_portalLatchConsumed = false;
+static bool g_ignoreForcePortal = false;
+static uint8_t g_heldConfigMask = 0;
 static bool g_fn = false;
 static bool g_resetHeld = false;
 static uint32_t g_resetHoldStart = 0;
@@ -65,33 +81,112 @@ static bool readReg(uint8_t reg, uint8_t *value)
     return true;
 }
 
-// Cardputer Adv electrical 7x8 -> physical 4x14 (Bruce / M5Cardputer / rust crate).
-// TCA8418 keycode: bits 0-6 = 10*row + col + 1
+// TCA8418: keycode = 10*row + col + 1 (TI SLVSAL4). Adv is 7x8.
+// Remap is M5Cardputer-UserDemo / xiaozhi CardputerADV (7x8 -> 4x14).
 static bool mapRawToPhysical(uint8_t keycode, uint8_t *row, uint8_t *col)
 {
-    const uint8_t u = keycode % 10; // 1..8
-    const uint8_t t = keycode / 10; // 0..6
-    if (u < 1 || u > 8 || t > 6) {
+    if (keycode < 1) {
         return false;
     }
-    const uint8_t u0 = (uint8_t)(u - 1);
-    *row = u0 & 0x03;
-    *col = (uint8_t)((t << 1) | (u0 >> 2));
+    const uint8_t raw_row = (uint8_t)((keycode - 1) / 10); // 0..6
+    const uint8_t raw_col = (uint8_t)((keycode - 1) % 10); // 0..7
+    if (raw_row > 6 || raw_col > 7) {
+        return false;
+    }
+    *col = (uint8_t)((raw_row * 2) + ((raw_col > 3) ? 1 : 0));
+    *row = (uint8_t)((raw_col + 4) % 4);
     return *row < 4 && *col < 14;
 }
 
-static void flushFifo()
+static uint8_t advArrowFromRaw(uint8_t keycode)
+{
+    switch (keycode) {
+    case ADV_RAW_DOWN:
+        return KEY_DOWN;
+    case ADV_RAW_UP:
+        return KEY_UP;
+    case ADV_RAW_LEFT:
+        return KEY_LEFT;
+    case ADV_RAW_RIGHT:
+        return KEY_RIGHT;
+    default:
+        return 0;
+    }
+}
+
+static bool isConfigKey(uint8_t key)
+{
+    return key == KEY_ENTER || key == 'c' || key == 'C' || key == 'w' || key == 'W';
+}
+
+static uint8_t configKeyBit(uint8_t key)
+{
+    if (key == KEY_ENTER) {
+        return 1;
+    }
+    if (key == 'c' || key == 'C') {
+        return 2;
+    }
+    if (key == 'w' || key == 'W') {
+        return 4;
+    }
+    return 0;
+}
+
+static bool g0Held()
+{
+#ifdef PIN_BUTTON_1
+    pinMode(PIN_BUTTON_1, INPUT_PULLUP);
+    delay(1);
+    return digitalRead(PIN_BUTTON_1) == LOW;
+#else
+    return false;
+#endif
+}
+
+static void latchConfigIfHeld()
+{
+    if (g_ignoreForcePortal) {
+        return;
+    }
+    if (!g_portalLatchConsumed && g_heldConfigMask != 0) {
+        g_wantsConfig = true;
+    }
+}
+
+// Drain FIFO without dropping a currently held config key.
+// HWbot: flushFifo() then 30ms drain wipes a boot-held Enter — the press is
+// already in the FIFO, flush discards it, and a still-held key emits no new
+// event. Track press/release so a leftover press+release after ESP.restart()
+// does not re-arm the portal. Latch only if a config key is still down.
+static void drainFifoForHeldConfig()
 {
     uint8_t ev = 0;
     for (int i = 0; i < 16; ++i) {
         if (!readReg(TCA8418_REG_KEY_EVENT_A, &ev) || ev == 0) {
             break;
         }
+        const bool pressed = (ev & 0x80) != 0;
+        const uint8_t keycode = (uint8_t)(ev & 0x7F);
+        uint8_t row = 0xFF, col = 0xFF;
+        uint8_t key = 0;
+        if (mapRawToPhysical(keycode, &row, &col)) {
+            key = kKeyMap[row][col];
+        }
+        if (isConfigKey(key)) {
+            const uint8_t bit = configKeyBit(key);
+            if (pressed) {
+                g_heldConfigMask |= bit;
+            } else {
+                g_heldConfigMask = (uint8_t)(g_heldConfigMask & ~bit);
+            }
+        }
     }
     writeReg(TCA8418_REG_INT_STAT, 0x03);
+    latchConfigIfHeld();
 }
 
-static void dispatchChar(char key)
+static void dispatchKey(uint8_t key)
 {
     const uint32_t now = millis();
     if ((now - g_lastNavMs) < 180) {
@@ -99,14 +194,18 @@ static void dispatchChar(char key)
     }
     g_lastNavMs = now;
 
-    if (key == KEY_ENTER || key == ' ' || key == 'n' || key == '.' || key == '/' || key == ';') {
-        Serial.println(F("Cardputer KB: next screen"));
+    // Bare ';' / '.' stay v1.2 next. KEY_DOWN (Fn+.) is also next (+1).
+    if (key == KEY_DOWN || key == KEY_RIGHT || key == KEY_ENTER ||
+        key == ' ' || key == 'n' || key == '.' || key == '/' || key == ';') {
+        Serial.println(key == KEY_DOWN ? F("Cardputer KB: down / next screen")
+                                       : F("Cardputer KB: next screen"));
         switchToNextScreen();
         return;
     }
-    // Prev is p / comma only. Short KEY_BACKSPACE tap is handled on release.
-    if (key == 'p' || key == ',') {
-        Serial.println(F("Cardputer KB: previous screen"));
+    // Up / left / p / comma = prev. Short KEY_BACKSPACE tap is handled on release.
+    if (key == KEY_UP || key == KEY_LEFT || key == 'p' || key == ',') {
+        Serial.println(key == KEY_UP ? F("Cardputer KB: up / previous screen")
+                                     : F("Cardputer KB: previous screen"));
         switchToPrevScreen();
         return;
     }
@@ -131,11 +230,16 @@ static void handleEvent(uint8_t raw)
     const bool pressed = (raw & 0x80) != 0;
     const uint8_t keycode = raw & 0x7F;
     uint8_t row = 0xFF, col = 0xFF;
-    if (!mapRawToPhysical(keycode, &row, &col)) {
-        return;
+    uint8_t key = 0;
+    if (mapRawToPhysical(keycode, &row, &col)) {
+        key = kKeyMap[row][col];
+    } else {
+        // Field-captured Adv FIFO (↓=58) if the 7x8 remap ever misses.
+        key = advArrowFromRaw(keycode);
+        if (key == 0) {
+            return;
+        }
     }
-
-    const char key = kKeyMap[row][col];
 
     if (key == KEY_FN) {
         g_fn = pressed;
@@ -143,16 +247,23 @@ static void handleEvent(uint8_t raw)
     }
 
     // KEY_BACKSPACE (HID 0x2A): hold 5s = reset config; short tap = prev.
-    if ((uint8_t)key == KEY_BACKSPACE) {
+    if (key == KEY_BACKSPACE) {
         if (pressed) {
             if (!g_resetHeld) {
                 g_resetHeld = true;
                 g_resetHoldStart = millis();
             }
         } else if (g_resetHeld) {
+            const uint32_t held = millis() - g_resetHoldStart;
+            if (held < 40) {
+                // Bounce — keep the 5s wipe timer running.
+                return;
+            }
             g_resetHeld = false;
-            Serial.println(F("Cardputer KB: previous screen"));
-            switchToPrevScreen();
+            if (held < CARDPUTER_RESET_HOLD_MS) {
+                Serial.println(F("Cardputer KB: previous screen"));
+                switchToPrevScreen();
+            }
         }
         return;
     }
@@ -168,20 +279,46 @@ static void handleEvent(uint8_t raw)
         return;
     }
 
-    // Fn + arrows: ';' and '.' '/' are next; ',' is prev.
-    dispatchChar(key);
+    // HWbot: Adv arrows are Fn-layer. No extra GPIO.
+    // Fn+. = Down → next; Fn+; = Up → prev. Fn+, left / Fn+/ right optional.
+    if (g_fn) {
+        if (key == '.' || key == KEY_DOWN) {
+            key = KEY_DOWN;
+        } else if (key == ';' || key == KEY_UP) {
+            key = KEY_UP;
+        } else if (key == ',') {
+            key = KEY_LEFT;
+        } else if (key == '/') {
+            key = KEY_RIGHT;
+        }
+    }
+
+    dispatchKey(key);
 }
 
 bool cardputerKeyboardBegin()
 {
     g_available = false;
     g_wantsConfig = false;
+    g_portalLatchConsumed = false;
+    g_ignoreForcePortal = false;
+    g_heldConfigMask = 0;
     g_fn = false;
     g_resetHeld = false;
 
+    // Peek BEFORE drainFifo. v1.1 peeked after dual EXT init, so a leftover
+    // Enter/C/W already latched g_wantsConfig. If SPIFFS /sta_first was lost
+    // (Launcher begin(true) format), that latch bounced back to WAITING CONFIG.
+    if (nvMem.peekStaFirst()) {
+        g_wantsConfig = false;
+        g_portalLatchConsumed = true;
+        g_ignoreForcePortal = true;
+        Serial.println(F("Cardputer KB: STA-first — skip Enter/C/W/G0 latch"));
+    }
+
     // Keep EXT SPI CS idle so the onboard SD (HSPI CS=12) is not contested.
-    pinMode(5, OUTPUT);
-    digitalWrite(5, HIGH);
+    pinMode(EXT_TFT_CS, OUTPUT);
+    digitalWrite(EXT_TFT_CS, HIGH);
     pinMode(TCA8418_INT_PIN, INPUT_PULLUP);
 
     Wire.begin(TCA8418_SDA_PIN, TCA8418_SCL_PIN);
@@ -191,6 +328,10 @@ bool cardputerKeyboardBegin()
     Wire.beginTransmission(TCA8418_I2C_ADDR);
     if (Wire.endTransmission() != 0) {
         Serial.println(F("Cardputer KB: TCA8418 not found at 0x34"));
+        if (!g_ignoreForcePortal && g0Held()) {
+            g_wantsConfig = true;
+            Serial.println(F("Cardputer KB: G0 held at boot — config portal"));
+        }
         return false;
     }
 
@@ -200,28 +341,26 @@ bool cardputerKeyboardBegin()
         !writeReg(TCA8418_REG_KP_GPIO3, 0x00) ||
         !writeReg(TCA8418_REG_CFG, TCA8418_CFG_INT_CFG | TCA8418_CFG_KE_IEN)) {
         Serial.println(F("Cardputer KB: TCA8418 init write failed"));
+        if (!g_ignoreForcePortal && g0Held()) {
+            g_wantsConfig = true;
+            Serial.println(F("Cardputer KB: G0 held at boot — config portal"));
+        }
         return false;
     }
 
-    flushFifo();
+    // Do NOT flushFifo() here. A boot-held Enter/C/W press is already queued;
+    // flushing it then waiting 30ms leaves an empty FIFO while the key is
+    // still down, so wantsConfig stays false and the portal never opens.
+    delay(50); // TCA8418 debounce after keypad enable (~50 ms)
+    drainFifoForHeldConfig();
     delay(30);
+    drainFifoForHeldConfig();
 
-    // Drain any keys already down (boot-time config combo).
-    uint8_t ev = 0;
-    while (readReg(TCA8418_REG_KEY_EVENT_A, &ev) && ev != 0) {
-        const bool pressed = (ev & 0x80) != 0;
-        uint8_t row = 0xFF, col = 0xFF;
-        if (pressed && mapRawToPhysical((uint8_t)(ev & 0x7F), &row, &col)) {
-            const char key = kKeyMap[row][col];
-            if (key == KEY_ENTER || key == 'c' || key == 'w') {
-                g_wantsConfig = true;
-            }
-        }
+    if (!g_ignoreForcePortal && g0Held()) {
+        g_wantsConfig = true;
+        Serial.println(F("Cardputer KB: G0 held at boot — config portal"));
     }
-    writeReg(TCA8418_REG_INT_STAT, 0x03);
 
-    // Also treat G0 (PIN_BUTTON_1) held at boot as "open portal" when used
-    // together with a keyboard key — Enter/C/W already set the flag.
     g_available = true;
     Serial.println(g_wantsConfig
                        ? F("Cardputer KB: TCA8418 ready (config key held)")
@@ -236,7 +375,39 @@ bool cardputerKeyboardAvailable()
 
 bool cardputerKeyboardWantsConfig()
 {
+    if (g_ignoreForcePortal) {
+        return false;
+    }
     return g_wantsConfig;
+}
+
+bool cardputerKeyboardPollConfigHeld()
+{
+    if (g_ignoreForcePortal) {
+        return false;
+    }
+    if (g_available) {
+        drainFifoForHeldConfig();
+    }
+    const bool physical = (g_heldConfigMask != 0) || g0Held();
+    if (physical && !g_portalLatchConsumed) {
+        g_wantsConfig = true;
+    }
+    // Splash poll = physically held Enter/C/W/G0 only (not a leftover latch).
+    return physical;
+}
+
+void cardputerKeyboardClearConfigLatch()
+{
+    g_wantsConfig = false;
+    g_portalLatchConsumed = true;
+}
+
+void cardputerKeyboardIgnoreForcePortal()
+{
+    g_wantsConfig = false;
+    g_portalLatchConsumed = true;
+    g_ignoreForcePortal = true;
 }
 
 void cardputerKeyboardTick()

@@ -127,8 +127,12 @@ void reset_configuration()
 {
     Serial.println("Erasing Config, restarting");
     nvMem.deleteConfig();
+    nvMem.consumeStaFirst();
+    nvMem.armForcePortal();
     resetStat();
     wm.resetSettings();
+    WiFi.disconnect(true, true);
+    delay(200);
     ESP.restart();
 }
 
@@ -153,37 +157,68 @@ void init_WifiManager()
 
     // Change to true when testing to force configuration every time we run
     bool forceConfig = false;
+    const bool wipePortal = nvMem.consumeForcePortal();
+    const bool staFirst = nvMem.consumeStaFirst();
 
-#if defined(PIN_BUTTON_2)
-    // Check if button2 is pressed to enter configMode with actual configuration
-    if (!digitalRead(PIN_BUTTON_2)) {
-        Serial.println(F("Button pressed to force start config mode"));
-        forceConfig = true;
-        wm.setBreakAfterConfig(true); //Set to detect config edition and save
-    }
-#endif
-#ifdef M5_CARDPUTER_ADV
-    if (cardputerKeyboardWantsConfig()) {
-        Serial.println(F("Cardputer KB: Enter/C/W held — start config portal"));
+    if (wipePortal) {
+        Serial.println(F("Config reset — start config portal"));
         forceConfig = true;
         wm.setBreakAfterConfig(true);
     }
+#ifdef M5_CARDPUTER_ADV
+    if (staFirst) {
+        // Portal save one-shot: ignore leftover Enter/C/W/G0 and try STA first.
+        cardputerKeyboardIgnoreForcePortal();
+        Serial.println(F("STA-first boot — ignore Enter/C/W/G0 force-portal"));
+    }
 #endif
+    if (!wipePortal && !staFirst) {
+#if defined(PIN_BUTTON_2)
+        // Check if button2 is pressed to enter configMode with actual configuration
+        if (!digitalRead(PIN_BUTTON_2)) {
+            Serial.println(F("Button pressed to force start config mode"));
+            forceConfig = true;
+            wm.setBreakAfterConfig(true); //Set to detect config edition and save
+        }
+#endif
+#ifdef M5_CARDPUTER_ADV
+        // Boot latch (begin / splash) OR keys still physically held.
+        if (cardputerKeyboardWantsConfig() || cardputerKeyboardPollConfigHeld()) {
+            Serial.println(F("Cardputer KB: Enter/C/W/G0 held — start config portal"));
+            forceConfig = true;
+            wm.setBreakAfterConfig(true);
+        }
+#endif
+    }
     // Explicitly set WiFi mode
     WiFi.mode(WIFI_STA);
 
     if (!nvMem.loadConfig(&Settings))
     {
         //No config file on internal flash.
-        if (SDCrd.loadConfigFile(&Settings))
+        // Boot-held portal / wipe flag must not be skipped by SD config.json.
+        // STA-first after a portal save must not bounce to WAITING CONFIG just
+        // because SPIFFS was reformatted (Launcher begin(true)); WiFi creds
+        // live in NVS. SD fallback still runs when the user is not forcing
+        // the portal and is not in the STA-first window.
+        if (!forceConfig && !staFirst && SDCrd.loadConfigFile(&Settings))
         {
             //Config file on SD card.
             SDCrd.SD2nvMemory(&nvMem, &Settings); // reboot on success.          
         }
+        else if (!forceConfig && staFirst && SDCrd.loadConfigFile(&Settings))
+        {
+            // Use SD pool/wallet in RAM; do not SD2nvMemory-reboot (re-latches keys).
+            Serial.println(F("STA-first: using SD config in RAM, skip SPIFFS reboot"));
+        }
+        else if (!staFirst)
+        {
+            //No config file on SD card (or portal forced). Starting wifi config server.
+            forceConfig = true;
+        }
         else
         {
-            //No config file on SD card. Starting wifi config server.
-            forceConfig = true;
+            Serial.println(F("STA-first: no SPIFFS/SD config — try STA anyway"));
         }
     };
     
@@ -196,7 +231,9 @@ void init_WifiManager()
     //Set dark theme
     //wm.setClass("invert"); // dark theme
 
-    // Set config save notify callback
+    // Save/Connect: WM 2.0.17 often returns from startConfigPortal without
+    // _savewificallback. Pre-save fires in handleWifiSave before connect.
+    wm.setPreSaveConfigCallback(saveConfigCallback);
     wm.setSaveConfigCallback(saveConfigCallback);
     wm.setSaveParamsCallback(saveConfigCallback);
 
@@ -271,71 +308,129 @@ void init_WifiManager()
     wm.addParameter(&brightness_text_box_num);
   #endif
 
-    Serial.println("AllDone: ");
-    if (forceConfig)    
-    {
-        // Run if we need a configuration
-        //No configuramos timeout al modulo
-        wm.setConfigPortalBlocking(true); //Hacemos que el portal SI bloquee el firmware
-        drawSetupScreen();
-        mMonitor.NerdStatus = NM_Connecting;
-        wm.startConfigPortal(apName, DEFAULT_WIFIPW);
+    auto saveFromPortal = [&]() {
+        Settings.PoolAddress = pool_text_box.getValue();
+        Settings.PoolPort = atoi(port_text_box_num.getValue());
+        strncpy(Settings.PoolPassword, password_text_box.getValue(), sizeof(Settings.PoolPassword));
+        strncpy(Settings.BtcWallet, addr_text_box.getValue(), sizeof(Settings.BtcWallet));
+        Settings.Timezone = atoi(time_text_box_num.getValue());
+        Settings.saveStats = (strncmp(save_stats_to_nvs.getValue(), "T", 1) == 0);
+#if defined(ESP32_2432S028R) || defined(ESP32_2432S028_2USB)
+        Settings.invertColors = (strncmp(invertColors.getValue(), "T", 1) == 0);
+        Settings.Brightness = atoi(brightness_text_box_num.getValue());
+#endif
+        nvMem.saveConfig(&Settings);
+    };
 
-        if (shouldSaveConfig)
-        {
-            //Could be break forced after edditing, so save new config
-            Serial.println("failed to connect and hit timeout");
-            Settings.PoolAddress = pool_text_box.getValue();
-            Settings.PoolPort = atoi(port_text_box_num.getValue());
-            strncpy(Settings.PoolPassword, password_text_box.getValue(), sizeof(Settings.PoolPassword));
-            strncpy(Settings.BtcWallet, addr_text_box.getValue(), sizeof(Settings.BtcWallet));
-            Settings.Timezone = atoi(time_text_box_num.getValue());
-            //Serial.println(save_stats_to_nvs.getValue());
-            Settings.saveStats = (strncmp(save_stats_to_nvs.getValue(), "T", 1) == 0);
-            #if defined(ESP32_2432S028R) || defined(ESP32_2432S028_2USB)
-                Settings.invertColors = (strncmp(invertColors.getValue(), "T", 1) == 0);
-            #endif
-            #if defined(ESP32_2432S028R) || defined(ESP32_2432S028_2USB)
-                Settings.Brightness = atoi(brightness_text_box_num.getValue());
-            #endif
-            nvMem.saveConfig(&Settings);
-            delay(3*SECOND_MS);
-            //reset and try again, or maybe put it to deep sleep
-            ESP.restart();            
-        };
+    // Contract v1.2 ARCH: kill infinite portal re-enter. WM Save/Connect often
+    // returns from startConfigPortal without shouldSaveConfig — the old
+    // infinite portal loop then immediately drawSetupScreen (WAITING CONFIG bounce).
+    // On portal exit: clear latch, arm /sta_first, leave softAP, Connecting/STA
+    // with enableConfigPortal(false). STA fail → one clear retry, then setup
+    // only if still fail. Do not ESP.restart(). /force_portal is wipe-only.
+    auto leaveSoftAp = [&]() {
+        wm.stopConfigPortal();
+        WiFi.softAPdisconnect(true);
+        WiFi.mode(WIFI_STA);
+        wm.setEnableConfigPortal(false);
+    };
+
+    auto tryStaFirst = [&]() -> bool {
+        mMonitor.NerdStatus = NM_Connecting;
+        drawLoadingScreen();
+        leaveSoftAp();
+        wm.setCaptivePortalEnable(true);
+        wm.setConfigPortalBlocking(true);
+        wm.setEnableConfigPortal(false);
+        wm.setConnectTimeout(40);
+        return wm.autoConnect(apName, DEFAULT_WIFIPW);
+    };
+
+    auto commitPortalSave = [&]() {
+        Serial.println(F("Portal save — latch clear, arm sta_first, leave AP, no bounce restart"));
+        saveFromPortal();
+#ifdef M5_CARDPUTER_ADV
+        cardputerKeyboardClearConfigLatch();
+        cardputerKeyboardIgnoreForcePortal();
+#endif
+        nvMem.armStaFirst();
+        leaveSoftAp();
+    };
+
+    // Connecting + STA + one retry. Setup QR is the caller's job only if this fails.
+    auto staWithOneRetry = [&]() -> bool {
+        if (WiFi.status() == WL_CONNECTED) {
+            mMonitor.NerdStatus = NM_Connecting;
+            leaveSoftAp();
+            return true;
+        }
+        if (tryStaFirst()) {
+            return true;
+        }
+        Serial.println(F("STA fail — one clear retry"));
+        return tryStaFirst();
+    };
+
+    auto afterPortalReturn = [&](bool portalConnected) -> bool {
+        const bool creds = wm.getWiFiSSID(true).length() > 0;
+        // WM Save/Connect often exits with shouldSaveConfig still false.
+        const bool treatAsSave = shouldSaveConfig || portalConnected ||
+                                 (WiFi.status() == WL_CONNECTED) || creds;
+        if (treatAsSave) {
+            commitPortalSave();
+        } else {
+#ifdef M5_CARDPUTER_ADV
+            cardputerKeyboardClearConfigLatch();
+            cardputerKeyboardIgnoreForcePortal();
+#endif
+            leaveSoftAp();
+        }
+        if (!staWithOneRetry()) {
+            Serial.println(F("STA timeout after save/retry — setup only if still fail"));
+            return false;
+        }
+        return true;
+    };
+
+    auto runConfigPortal = [&]() {
+#ifdef M5_CARDPUTER_ADV
+        cardputerKeyboardClearConfigLatch();
+#endif
+        wm.setConfigPortalBlocking(true);
+        wm.setBreakAfterConfig(true);
+        wm.setConfigPortalTimeout(0);
+        shouldSaveConfig = false;
+        mMonitor.NerdStatus = NM_waitingConfig;
+        drawSetupScreen();
+        const bool portalConnected = wm.startConfigPortal(apName, DEFAULT_WIFIPW);
+        if (afterPortalReturn(portalConnected)) {
+            return;
+        }
+        // Real STA timeout + retry already elapsed. One more setup, not an infinite loop.
+        shouldSaveConfig = false;
+        mMonitor.NerdStatus = NM_waitingConfig;
+        drawSetupScreen();
+        const bool portalConnected2 = wm.startConfigPortal(apName, DEFAULT_WIFIPW);
+        if (afterPortalReturn(portalConnected2)) {
+            return;
+        }
+        Serial.println(F("Portal: still no STA after two sessions — no infinite re-enter"));
+    };
+
+    Serial.println("AllDone: ");
+    if (forceConfig)
+    {
+        runConfigPortal();
     }
     else
     {
-        //Tratamos de conectar con la configuración inicial ya almacenada
-        mMonitor.NerdStatus = NM_Connecting;
-        // disable captive portal redirection
-        wm.setCaptivePortalEnable(true); 
-        wm.setConfigPortalBlocking(true);
-        wm.setEnableConfigPortal(true);
-        // if (!wm.autoConnect(Settings.WifiSSID.c_str(), Settings.WifiPW.c_str()))
-        if (!wm.autoConnect(apName, DEFAULT_WIFIPW))
+        // STA first: Connecting only. No setup QR until a real STA timeout
+        // plus one clear retry (sta_first must not drop straight into portal).
+        if (!staWithOneRetry())
         {
             Serial.println("Failed to connect to configured WIFI, and hit timeout");
-            if (shouldSaveConfig) {
-                // Save new config            
-                Settings.PoolAddress = pool_text_box.getValue();
-                Settings.PoolPort = atoi(port_text_box_num.getValue());
-                strncpy(Settings.PoolPassword, password_text_box.getValue(), sizeof(Settings.PoolPassword));
-                strncpy(Settings.BtcWallet, addr_text_box.getValue(), sizeof(Settings.BtcWallet));
-                Settings.Timezone = atoi(time_text_box_num.getValue());
-                // Serial.println(save_stats_to_nvs.getValue());
-                Settings.saveStats = (strncmp(save_stats_to_nvs.getValue(), "T", 1) == 0);
-                #if defined(ESP32_2432S028R) || defined(ESP32_2432S028_2USB)
-                Settings.invertColors = (strncmp(invertColors.getValue(), "T", 1) == 0);
-                #endif
-                #if defined(ESP32_2432S028R) || defined(ESP32_2432S028_2USB)
-                Settings.Brightness = atoi(brightness_text_box_num.getValue());
-                #endif
-                nvMem.saveConfig(&Settings);
-                vTaskDelay(2000 / portTICK_PERIOD_MS);      
-            }        
-            ESP.restart();                            
-        } 
+            runConfigPortal();
+        }
     }
     
     //Conectado a la red Wifi
