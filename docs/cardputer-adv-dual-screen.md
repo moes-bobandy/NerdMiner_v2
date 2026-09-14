@@ -110,7 +110,7 @@ INT V1 does not do this: it composes in a sprite and `pushSprite`s once.
 
 `nerd_quiesce_ext()` only idles EXT CS (GPIO5 **HIGH**) and now waits until `nerd_ext_end_frame()`. ILI9341 GRAM is retained. SD is boot-time (`initSDcard` / `loadConfigFile`) then `terminate()`.
 
-**Portal must not be skipped.** Dual EXT init, SD HSPI quiesce, and the mining loop must not bypass `init_WifiManager` / `NerdMinerAP`. Boot-held Enter / C / W (drain-while-held, do not `flushFifo` a still-held key) and G0 during the loading splash force the portal. Backspace-5s wipe arms a SPIFFS flag so the next boot opens the portal even if SD has `config.json`. SD `config.json` remains first-boot fallback when the portal is **not** forced. Mining tasks start only after Wi‑Fi setup. No INT menu list in this firmware.
+**Portal must not be skipped.** Dual EXT init, SD HSPI quiesce, and the mining loop must not bypass `init_WifiManager` / `NerdMinerAP`. Boot-held Enter / C / W (drain-while-held, do not `flushFifo` a still-held key) and G0 during the loading splash force the portal. After Save/Connect: always persist; **restart into mining only if `WL_CONNECTED`**. Bad password stays on `setupModeScreen` (WAITING CONFIG) — do **not** `ESP.restart()` into the `initScreen` splash. Clear `g_wantsConfig` once the portal starts this boot; splash poll is physically held keys only. Backspace-5s wipe arms a SPIFFS `/force_portal` flag so the next boot opens the portal even if SD has `config.json`. Connect-fail must **not** arm that flag. SD `config.json` remains first-boot fallback when the portal is **not** forced. Mining tasks start only after Wi‑Fi setup. No INT menu list in this firmware. Portal stays INT-only (`nerd_nav()` / `drawSetupScreen`).
 
 Locked redraw rules:
 
@@ -141,6 +141,7 @@ On the dirt unit (porkchop EXT wired, dual bin, SD present):
 5. INT must keep the selected cyclic view in sync (stock miner/clock/network/price chrome, not a dual-HUD list). `r` rotate and `b` backlight stay on INT. Hold `KEY_BACKSPACE` still resets.
 6. Confirm boot still talks to SD (config load or “No config file” — no hang, no EXT-stuck-low SD fail).
 7. **Portal:** Hold Enter (or C / W / G0 during splash) on a dual Launcher bin — INT must show setup and `NerdMinerAP` / `MineYourCoins` must come up. Do **not** skip into mining. Hold Backspace 5s after a saved config: Wi‑Fi must clear and the portal must return. SD `config.json` still applies on a normal first boot without a force-portal hold.
+8. **Portal Save/Connect (v1.1):** From a forced portal, Save with a **bad** password must stay on the config QR (`setupModeScreen` / WAITING CONFIG). Do **not** flash the loading/`initScreen` “Connecting to Wifi” QR, then bounce back. Save with a **good** password may splash once, then mining with a live pool (not zeros at 0.00 KH/s). Wipe / boot-hold still open the portal.
 
 ## Field retest (contract v2 / v2.1 / v2.2)
 

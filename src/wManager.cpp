@@ -166,9 +166,8 @@ void init_WifiManager()
     }
 #endif
 #ifdef M5_CARDPUTER_ADV
-    // Re-sample after dual EXT init + splash so a still-held Enter/C/W/G0
-    // opens NerdMinerAP even if begin() raced the TCA8418 debounce.
-    if (cardputerKeyboardPollConfigHeld()) {
+    // Boot latch (begin / splash) OR keys still physically held.
+    if (cardputerKeyboardWantsConfig() || cardputerKeyboardPollConfigHeld()) {
         Serial.println(F("Cardputer KB: Enter/C/W/G0 held — start config portal"));
         forceConfig = true;
         wm.setBreakAfterConfig(true);
@@ -283,45 +282,62 @@ void init_WifiManager()
     wm.addParameter(&brightness_text_box_num);
   #endif
 
-    Serial.println("AllDone: ");
-    if (forceConfig)    
-    {
-        // Run if we need a configuration
-        //No configuramos timeout al modulo
-        wm.setConfigPortalBlocking(true); //Hacemos que el portal SI bloquee el firmware
-        drawSetupScreen();
-        mMonitor.NerdStatus = NM_Connecting;
-        wm.startConfigPortal(apName, DEFAULT_WIFIPW);
+    auto saveFromPortal = [&]() {
+        Settings.PoolAddress = pool_text_box.getValue();
+        Settings.PoolPort = atoi(port_text_box_num.getValue());
+        strncpy(Settings.PoolPassword, password_text_box.getValue(), sizeof(Settings.PoolPassword));
+        strncpy(Settings.BtcWallet, addr_text_box.getValue(), sizeof(Settings.BtcWallet));
+        Settings.Timezone = atoi(time_text_box_num.getValue());
+        Settings.saveStats = (strncmp(save_stats_to_nvs.getValue(), "T", 1) == 0);
+#if defined(ESP32_2432S028R) || defined(ESP32_2432S028_2USB)
+        Settings.invertColors = (strncmp(invertColors.getValue(), "T", 1) == 0);
+        Settings.Brightness = atoi(brightness_text_box_num.getValue());
+#endif
+        nvMem.saveConfig(&Settings);
+    };
 
-        if (shouldSaveConfig)
-        {
-            //Could be break forced after edditing, so save new config
-            Serial.println("failed to connect and hit timeout");
-            Settings.PoolAddress = pool_text_box.getValue();
-            Settings.PoolPort = atoi(port_text_box_num.getValue());
-            strncpy(Settings.PoolPassword, password_text_box.getValue(), sizeof(Settings.PoolPassword));
-            strncpy(Settings.BtcWallet, addr_text_box.getValue(), sizeof(Settings.BtcWallet));
-            Settings.Timezone = atoi(time_text_box_num.getValue());
-            //Serial.println(save_stats_to_nvs.getValue());
-            Settings.saveStats = (strncmp(save_stats_to_nvs.getValue(), "T", 1) == 0);
-            #if defined(ESP32_2432S028R) || defined(ESP32_2432S028_2USB)
-                Settings.invertColors = (strncmp(invertColors.getValue(), "T", 1) == 0);
-            #endif
-            #if defined(ESP32_2432S028R) || defined(ESP32_2432S028_2USB)
-                Settings.Brightness = atoi(brightness_text_box_num.getValue());
-            #endif
-            nvMem.saveConfig(&Settings);
-            delay(3*SECOND_MS);
-            //reset and try again, or maybe put it to deep sleep
-            ESP.restart();            
-        };
+    // Contract v1.1: after BreakAfterConfig save, always persist. Restart into
+    // mining only if STA is up. If not connected, do NOT ESP.restart() into
+    // initScreen splash — stay/re-enter setupModeScreen (WAITING CONFIG).
+    // Never arm /force_portal on connect fail.
+    auto runPortalUntilWifi = [&]() {
+#ifdef M5_CARDPUTER_ADV
+        cardputerKeyboardClearConfigLatch();
+#endif
+        wm.setConfigPortalBlocking(true);
+        wm.setBreakAfterConfig(true);
+        wm.setConfigPortalTimeout(0);
+        mMonitor.NerdStatus = NM_waitingConfig;
+        for (;;) {
+            shouldSaveConfig = false;
+            drawSetupScreen();
+            wm.startConfigPortal(apName, DEFAULT_WIFIPW);
+            if (shouldSaveConfig) {
+                Serial.println(F("Portal shouldSaveConfig — saving"));
+                saveFromPortal();
+                if (WiFi.status() == WL_CONNECTED) {
+                    Serial.println(F("WiFi connected after portal save — restart into mining"));
+                    delay(3 * SECOND_MS);
+                    ESP.restart();
+                }
+                Serial.println(F("Portal save but STA not connected — re-enter config portal"));
+            } else {
+                Serial.println(F("Config portal ended without save — re-enter WAITING CONFIG"));
+            }
+        }
+    };
+
+    Serial.println("AllDone: ");
+    if (forceConfig)
+    {
+        runPortalUntilWifi();
     }
     else
     {
         //Tratamos de conectar con la configuración inicial ya almacenada
         mMonitor.NerdStatus = NM_Connecting;
         // disable captive portal redirection
-        wm.setCaptivePortalEnable(true); 
+        wm.setCaptivePortalEnable(true);
         wm.setConfigPortalBlocking(true);
         wm.setEnableConfigPortal(true);
         // if (!wm.autoConnect(Settings.WifiSSID.c_str(), Settings.WifiPW.c_str()))
@@ -329,25 +345,14 @@ void init_WifiManager()
         {
             Serial.println("Failed to connect to configured WIFI, and hit timeout");
             if (shouldSaveConfig) {
-                // Save new config            
-                Settings.PoolAddress = pool_text_box.getValue();
-                Settings.PoolPort = atoi(port_text_box_num.getValue());
-                strncpy(Settings.PoolPassword, password_text_box.getValue(), sizeof(Settings.PoolPassword));
-                strncpy(Settings.BtcWallet, addr_text_box.getValue(), sizeof(Settings.BtcWallet));
-                Settings.Timezone = atoi(time_text_box_num.getValue());
-                // Serial.println(save_stats_to_nvs.getValue());
-                Settings.saveStats = (strncmp(save_stats_to_nvs.getValue(), "T", 1) == 0);
-                #if defined(ESP32_2432S028R) || defined(ESP32_2432S028_2USB)
-                Settings.invertColors = (strncmp(invertColors.getValue(), "T", 1) == 0);
-                #endif
-                #if defined(ESP32_2432S028R) || defined(ESP32_2432S028_2USB)
-                Settings.Brightness = atoi(brightness_text_box_num.getValue());
-                #endif
-                nvMem.saveConfig(&Settings);
-                vTaskDelay(2000 / portTICK_PERIOD_MS);      
-            }        
-            ESP.restart();                            
-        } 
+                saveFromPortal();
+                if (WiFi.status() == WL_CONNECTED) {
+                    delay(3 * SECOND_MS);
+                    ESP.restart();
+                }
+            }
+            runPortalUntilWifi();
+        }
     }
     
     //Conectado a la red Wifi

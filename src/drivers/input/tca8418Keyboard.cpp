@@ -51,6 +51,8 @@ static const uint8_t kKeyMap[4][14] = {
 
 static bool g_available = false;
 static bool g_wantsConfig = false;
+static bool g_portalLatchConsumed = false;
+static uint8_t g_heldConfigMask = 0;
 static bool g_fn = false;
 static bool g_resetHeld = false;
 static uint32_t g_resetHoldStart = 0;
@@ -116,6 +118,20 @@ static bool isConfigKey(uint8_t key)
     return key == KEY_ENTER || key == 'c' || key == 'C' || key == 'w' || key == 'W';
 }
 
+static uint8_t configKeyBit(uint8_t key)
+{
+    if (key == KEY_ENTER) {
+        return 1;
+    }
+    if (key == 'c' || key == 'C') {
+        return 2;
+    }
+    if (key == 'w' || key == 'W') {
+        return 4;
+    }
+    return 0;
+}
+
 static bool g0Held()
 {
 #ifdef PIN_BUTTON_1
@@ -127,10 +143,18 @@ static bool g0Held()
 #endif
 }
 
+static void latchConfigIfHeld()
+{
+    if (!g_portalLatchConsumed && g_heldConfigMask != 0) {
+        g_wantsConfig = true;
+    }
+}
+
 // Drain FIFO without dropping a currently held config key.
 // HWbot: flushFifo() then 30ms drain wipes a boot-held Enter — the press is
 // already in the FIFO, flush discards it, and a still-held key emits no new
-// event. Record presses of Enter/C/W; a later release does not clear the flag.
+// event. Track press/release so a leftover press+release after ESP.restart()
+// does not re-arm the portal. Latch only if a config key is still down.
 static void drainFifoForHeldConfig()
 {
     uint8_t ev = 0;
@@ -145,11 +169,17 @@ static void drainFifoForHeldConfig()
         if (mapRawToPhysical(keycode, &row, &col)) {
             key = kKeyMap[row][col];
         }
-        if (pressed && isConfigKey(key)) {
-            g_wantsConfig = true;
+        if (isConfigKey(key)) {
+            const uint8_t bit = configKeyBit(key);
+            if (pressed) {
+                g_heldConfigMask |= bit;
+            } else {
+                g_heldConfigMask = (uint8_t)(g_heldConfigMask & ~bit);
+            }
         }
     }
     writeReg(TCA8418_REG_INT_STAT, 0x03);
+    latchConfigIfHeld();
 }
 
 static void dispatchKey(uint8_t key)
@@ -266,6 +296,8 @@ bool cardputerKeyboardBegin()
 {
     g_available = false;
     g_wantsConfig = false;
+    g_portalLatchConsumed = false;
+    g_heldConfigMask = 0;
     g_fn = false;
     g_resetHeld = false;
 
@@ -336,10 +368,18 @@ bool cardputerKeyboardPollConfigHeld()
     if (g_available) {
         drainFifoForHeldConfig();
     }
-    if (g0Held()) {
+    const bool physical = (g_heldConfigMask != 0) || g0Held();
+    if (physical && !g_portalLatchConsumed) {
         g_wantsConfig = true;
     }
-    return g_wantsConfig;
+    // Splash poll = physically held Enter/C/W/G0 only (not a leftover latch).
+    return physical;
+}
+
+void cardputerKeyboardClearConfigLatch()
+{
+    g_wantsConfig = false;
+    g_portalLatchConsumed = true;
 }
 
 void cardputerKeyboardTick()

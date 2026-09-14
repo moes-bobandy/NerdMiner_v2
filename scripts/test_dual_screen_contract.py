@@ -330,7 +330,93 @@ class DualScreenContractTests(unittest.TestCase):
         flushed = [0x80 | 1]
         self.assertFalse(flush_then_drain(flushed))
         self.assertTrue(drain_while_held([0x80 | 1]))
-        self.assertTrue(drain_while_held([0x80 | 1, 1]))  # press then release still wants
+
+    def test_portal_contract_v11_save_no_splash_bounce(self) -> None:
+        """Contract v1.1: save always; restart only if WL_CONNECTED; latch clear."""
+        wm = read("src/wManager.cpp")
+        kb = read("src/drivers/input/tca8418Keyboard.cpp")
+        kbh = read("src/drivers/input/tca8418Keyboard.h")
+        disp = read("src/drivers/displays/display.cpp")
+        ino = read("src/NerdMinerV2.ino.cpp")
+        nv = read("src/drivers/storage/nvMemory.cpp")
+
+        # Config QR = setupModeScreen via nerd_nav; splash = initScreen loading.
+        self.assertIn("nerd_nav()->setupScreen()", disp)
+        self.assertIn("nerd_nav()->loadingScreen()", disp)
+        v1 = read("src/drivers/displays/tDisplayV1Driver.cpp")
+        self.assertIn("setupModeScreen", v1.split("tDisplay_SetupScreen")[1].split("tDisplay_AnimateCurrentScreen")[0])
+        self.assertIn("initScreen", v1.split("tDisplay_LoadingScreen")[1].split("tDisplay_SetupScreen")[0])
+        dual_h = read("src/drivers/displays/nerdMinerDual.h")
+        self.assertIn("Loading / setup / portal stay on INT", dual_h)
+
+        self.assertIn("cardputerKeyboardClearConfigLatch", kbh)
+        self.assertIn("cardputerKeyboardClearConfigLatch", wm)
+        self.assertIn("g_portalLatchConsumed", kb)
+        self.assertIn("g_heldConfigMask", kb)
+        self.assertIn("cardputerKeyboardWantsConfig()", wm)
+        self.assertIn("NM_waitingConfig", wm)
+        self.assertIn("runPortalUntilWifi", wm)
+        self.assertIn("WiFi.status() == WL_CONNECTED", wm)
+        self.assertIn("STA not connected — re-enter config portal", wm)
+        self.assertIn("shouldSaveConfig — saving", wm)
+
+        # Wipe still arms /force_portal; connect-fail path must not.
+        reset_fn = wm.split("void reset_configuration()")[1].split("void init_WifiManager()")[0]
+        self.assertIn("armForcePortal", reset_fn)
+        self.assertIn("ESP.restart()", reset_fn)
+        init_fn = wm.split("void init_WifiManager()")[1]
+        self.assertNotIn("armForcePortal", init_fn)
+        self.assertIn("/force_portal", nv)
+        self.assertIn("consumeForcePortal", wm)
+
+        # Portal-path ESP.restart(); (not wipe, not 2432 invert/brightness) is
+        # behind WL_CONNECTED. Comment text uses ESP.restart() without ';'.
+        portal_block = init_fn.split("//Conectado a la red Wifi")[0]
+        restart_idx = 0
+        guarded = 0
+        while True:
+            restart_idx = portal_block.find("ESP.restart();", restart_idx)
+            if restart_idx < 0:
+                break
+            window = portal_block[max(0, restart_idx - 250) : restart_idx]
+            self.assertIn("WL_CONNECTED", window)
+            guarded += 1
+            restart_idx += 1
+        self.assertGreaterEqual(guarded, 2)
+
+        # Splash poll is physical-held; boot latch survives until portal starts.
+        poll = kb.split("bool cardputerKeyboardPollConfigHeld()")[1].split("void cardputerKeyboardClearConfigLatch()")[0]
+        self.assertIn("g_heldConfigMask", poll)
+        self.assertIn("g0Held()", poll)
+        self.assertIn("return physical", poll)
+        self.assertNotIn("return g_wantsConfig", poll)
+        self.assertIn("cardputerKeyboardPollConfigHeld()", ino)
+        self.assertLess(ino.find("drawLoadingScreen()"), ino.find("init_WifiManager()"))
+        self.assertLess(ino.find("cardputerKeyboardPollConfigHeld()"), ino.find("init_WifiManager()"))
+
+        # Host replica: leftover press+release after software restart does not latch.
+        def drain_held(fifo, consumed=False):
+            held = 0
+            wants = False
+            for ev in fifo:
+                if ev & 0x80:
+                    held |= 1
+                else:
+                    held &= ~1
+            if not consumed and held:
+                wants = True
+            physical = held != 0
+            return wants, physical
+
+        self.assertEqual(drain_held([0x80 | 1]), (True, True))  # still held
+        self.assertEqual(drain_held([0x80 | 1, 1]), (False, False))  # press then release
+        self.assertEqual(drain_held([1]), (False, False))  # leftover release
+        self.assertEqual(drain_held([0x80 | 1], consumed=True), (False, True))
+
+        docs = read("docs/cardputer-adv-dual-screen.md")
+        self.assertIn("WL_CONNECTED", docs)
+        self.assertIn("initScreen", docs)
+        self.assertIn("WAITING CONFIG", docs)
 
     def test_orientation_locks_untouched(self) -> None:
         low = read("src/drivers/displays/ili9341Ext.cpp")

@@ -123,8 +123,8 @@ void setup()
   /******** PRINT INIT SCREEN *****/
   drawLoadingScreen();
 #ifdef M5_CARDPUTER_ADV
-  // Dual EXT init already ran. Keep sampling boot-held Enter/C/W/G0 through
-  // the splash so the portal is not skipped by HSPI/EXT work or the 2s delay.
+  // Dual EXT init already ran. Splash poll is physically held Enter/C/W/G0
+  // only (stale FIFO press+release after a portal restart must not re-arm).
   {
     const unsigned long until = millis() + 2 * SECOND_MS;
     while ((long)(until - millis()) > 0) {
