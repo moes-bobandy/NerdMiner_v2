@@ -122,7 +122,19 @@ void setup()
   
   /******** PRINT INIT SCREEN *****/
   drawLoadingScreen();
+#ifdef M5_CARDPUTER_ADV
+  // Dual EXT init already ran. Keep sampling boot-held Enter/C/W/G0 through
+  // the splash so the portal is not skipped by HSPI/EXT work or the 2s delay.
+  {
+    const unsigned long until = millis() + 2 * SECOND_MS;
+    while ((long)(until - millis()) > 0) {
+      cardputerKeyboardPollConfigHeld();
+      delay(50);
+    }
+  }
+#else
   delay(2*SECOND_MS);
+#endif
 
   /******** SHOW LED INIT STATUS (devices without screen) *****/
   mMonitor.NerdStatus = NM_waitingConfig;

@@ -127,8 +127,11 @@ void reset_configuration()
 {
     Serial.println("Erasing Config, restarting");
     nvMem.deleteConfig();
+    nvMem.armForcePortal();
     resetStat();
     wm.resetSettings();
+    WiFi.disconnect(true, true);
+    delay(200);
     ESP.restart();
 }
 
@@ -163,26 +166,35 @@ void init_WifiManager()
     }
 #endif
 #ifdef M5_CARDPUTER_ADV
-    if (cardputerKeyboardWantsConfig()) {
-        Serial.println(F("Cardputer KB: Enter/C/W held — start config portal"));
+    // Re-sample after dual EXT init + splash so a still-held Enter/C/W/G0
+    // opens NerdMinerAP even if begin() raced the TCA8418 debounce.
+    if (cardputerKeyboardPollConfigHeld()) {
+        Serial.println(F("Cardputer KB: Enter/C/W/G0 held — start config portal"));
         forceConfig = true;
         wm.setBreakAfterConfig(true);
     }
 #endif
+    if (nvMem.consumeForcePortal()) {
+        Serial.println(F("Config reset — start config portal"));
+        forceConfig = true;
+        wm.setBreakAfterConfig(true);
+    }
     // Explicitly set WiFi mode
     WiFi.mode(WIFI_STA);
 
     if (!nvMem.loadConfig(&Settings))
     {
         //No config file on internal flash.
-        if (SDCrd.loadConfigFile(&Settings))
+        // Boot-held portal / wipe flag must not be skipped by SD config.json.
+        // SD fallback still runs when the user is not forcing the portal.
+        if (!forceConfig && SDCrd.loadConfigFile(&Settings))
         {
             //Config file on SD card.
             SDCrd.SD2nvMemory(&nvMem, &Settings); // reboot on success.          
         }
         else
         {
-            //No config file on SD card. Starting wifi config server.
+            //No config file on SD card (or portal forced). Starting wifi config server.
             forceConfig = true;
         }
     };

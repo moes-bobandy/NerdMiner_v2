@@ -257,8 +257,13 @@ class DualScreenContractTests(unittest.TestCase):
         self.assertIn("not identical clones", docs)
         self.assertIn("nav/status only", docs)
         self.assertIn("Stock V1 chrome only", docs)
+        self.assertIn("Portal must not be skipped", docs)
+        self.assertIn("drain-while-held", docs)
         launcher = read("docs/cardputer-adv-launcher.md")
         self.assertIn("M5-Cardputer-Adv-dual", launcher)
+        self.assertIn("NerdMinerAP", launcher)
+        self.assertIn("hold Enter, C, or W", launcher)
+        self.assertIn("G0 (BOOT) held during the loading splash", launcher)
 
     def test_sw_xy_flip_window_geometry(self) -> None:
         """Host replica of extFlipX/extFlipY + row reverse (v2.6)."""
@@ -278,6 +283,64 @@ class DualScreenContractTests(unittest.TestCase):
         rev = list(reversed(row))
         self.assertEqual(rev[0], 319)
         self.assertEqual(rev[-1], 0)
+
+    def test_boot_portal_drain_while_held_not_flush(self) -> None:
+        """HWbot: flushFifo() then 30ms drain wipes a boot-held Enter."""
+        kb = read("src/drivers/input/tca8418Keyboard.cpp")
+        self.assertIn("drainFifoForHeldConfig", kb)
+        self.assertIn("cardputerKeyboardPollConfigHeld", kb)
+        self.assertIn("g0Held", kb)
+        self.assertIn("PIN_BUTTON_1", kb)
+        self.assertIn("isConfigKey", kb)
+        self.assertIn("Do NOT flushFifo()", kb)
+        self.assertNotIn("flushFifo();", kb)
+        self.assertIn("g_wantsConfig = true", kb)
+        ino = read("src/NerdMinerV2.ino.cpp")
+        self.assertIn("cardputerKeyboardPollConfigHeld()", ino)
+        self.assertIn("init_WifiManager()", ino)
+        self.assertLess(ino.find("initDisplay()"), ino.find("init_WifiManager()"))
+        self.assertLess(ino.find("cardputerKeyboardPollConfigHeld()"), ino.find("init_WifiManager()"))
+        wm = read("src/wManager.cpp")
+        self.assertIn("!forceConfig && SDCrd.loadConfigFile", wm)
+        self.assertIn("armForcePortal", wm)
+        self.assertIn("consumeForcePortal", wm)
+        self.assertIn("WiFi.disconnect(true, true)", wm)
+        self.assertIn("startConfigPortal", wm)
+        nv = read("src/drivers/storage/nvMemory.cpp")
+        self.assertIn("/force_portal", nv)
+        nv_del = nv.split("bool nvMemory::deleteConfig")[1].split("bool nvMemory::armForcePortal")[0]
+        self.assertIn("if (!init())", nv_del)
+        # No INT menu list in this PR.
+        dual = read("src/drivers/displays/nerdMinerDual.cpp")
+        self.assertNotIn("INT menu", dual)
+        self.assertNotIn("menu list", dual.lower())
+
+        # Host replica: a press already in the FIFO is lost if flushed first.
+        def flush_then_drain(fifo):
+            fifo.clear()
+            return any((ev & 0x80) for ev in fifo)
+
+        def drain_while_held(fifo):
+            wants = False
+            for ev in fifo:
+                if ev & 0x80:
+                    wants = True
+            return wants
+
+        flushed = [0x80 | 1]
+        self.assertFalse(flush_then_drain(flushed))
+        self.assertTrue(drain_while_held([0x80 | 1]))
+        self.assertTrue(drain_while_held([0x80 | 1, 1]))  # press then release still wants
+
+    def test_orientation_locks_untouched(self) -> None:
+        low = read("src/drivers/displays/ili9341Ext.cpp")
+        self.assertIn("#define EXT_TFT_MADCTL (ILI9341_MADCTL_MV | ILI9341_MADCTL_BGR)", low)
+        self.assertIn("#define EXT_TFT_SW_FLIP_Y 1", low)
+        self.assertIn("#define EXT_TFT_SW_FLIP_X 1", low)
+        driver = read("src/drivers/displays/ili9341ExtDriver.cpp")
+        self.assertIn("blitLiveStock", driver)
+        self.assertNotIn("Wifi 0kH", driver)
+        self.assertNotIn("%luKH", driver)
 
 
 if __name__ == "__main__":

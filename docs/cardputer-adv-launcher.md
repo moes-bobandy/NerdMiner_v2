@@ -73,7 +73,7 @@ The script refuses any file that does not start with `0xE9`.
 
 Optional: Launcher **OTA** can install the same app-only URL if you host the `0xE9` file (GitHub release asset, etc.). Still do **not** publish the factory merge as the Launcher payload.
 
-First-boot Wi‑Fi / pool setup is the usual NerdMiner AP (`NerdMinerAP` / `MineYourCoins`), or an SD `config.json` (see main README). On Adv you can also **hold Enter, C, or W** while NerdMiner starts to force the config portal.
+First-boot Wi‑Fi / pool setup is the usual NerdMiner AP (`NerdMinerAP` / `MineYourCoins`), or an SD `config.json` (see main README). On Adv you can also **hold Enter, C, or W** while NerdMiner starts to force the config portal. **G0 (BOOT) held during the loading splash** (after the app is already running — not during power-on reset, which would enter download mode) also opens the portal. A 5s Backspace wipe clears Wi‑Fi and re-enters the portal on the next boot; SD `config.json` is still used as first-boot fallback when you are not forcing the portal.
 
 ## Keyboard UI (TCA8418)
 
@@ -87,8 +87,9 @@ Stock upstream Adv support only wired **G0** as a one-button device. This fork d
 | `1`–`4` | Jump to cyclic screen 0–3 |
 | `r` | Rotate display |
 | `b`, Tab, Fn+`` ` `` | Toggle backlight |
-| Hold Backspace (`KEY_BACKSPACE` / HID `0x2A`) 5 seconds | Reset config and reboot |
-| Hold Enter / `c` / `w` at boot | Open Wi‑Fi config portal |
-| G0 (BOOT) | Same as a one-button device (click = next, long-press = reset) |
+| Hold Backspace (`KEY_BACKSPACE` / HID `0x2A`) 5 seconds | Reset config, clear Wi‑Fi, reboot into portal |
+| Hold Enter / `c` / `w` at boot | Open Wi‑Fi config portal (`NerdMinerAP`) |
+| Hold G0 (BOOT) during the loading splash | Open Wi‑Fi config portal (do not hold G0 through power-on reset) |
+| G0 (BOOT) after boot | Same as a one-button device (click = next, long-press = reset) |
 
 G0 still works if the keyboard chip is missing; Serial will log `TCA8418 not found at 0x34`.

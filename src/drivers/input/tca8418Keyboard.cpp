@@ -111,12 +111,42 @@ static uint8_t advArrowFromRaw(uint8_t keycode)
     }
 }
 
-static void flushFifo()
+static bool isConfigKey(uint8_t key)
+{
+    return key == KEY_ENTER || key == 'c' || key == 'C' || key == 'w' || key == 'W';
+}
+
+static bool g0Held()
+{
+#ifdef PIN_BUTTON_1
+    pinMode(PIN_BUTTON_1, INPUT_PULLUP);
+    delay(1);
+    return digitalRead(PIN_BUTTON_1) == LOW;
+#else
+    return false;
+#endif
+}
+
+// Drain FIFO without dropping a currently held config key.
+// HWbot: flushFifo() then 30ms drain wipes a boot-held Enter — the press is
+// already in the FIFO, flush discards it, and a still-held key emits no new
+// event. Record presses of Enter/C/W; a later release does not clear the flag.
+static void drainFifoForHeldConfig()
 {
     uint8_t ev = 0;
     for (int i = 0; i < 16; ++i) {
         if (!readReg(TCA8418_REG_KEY_EVENT_A, &ev) || ev == 0) {
             break;
+        }
+        const bool pressed = (ev & 0x80) != 0;
+        const uint8_t keycode = (uint8_t)(ev & 0x7F);
+        uint8_t row = 0xFF, col = 0xFF;
+        uint8_t key = 0;
+        if (mapRawToPhysical(keycode, &row, &col)) {
+            key = kKeyMap[row][col];
+        }
+        if (pressed && isConfigKey(key)) {
+            g_wantsConfig = true;
         }
     }
     writeReg(TCA8418_REG_INT_STAT, 0x03);
@@ -190,9 +220,16 @@ static void handleEvent(uint8_t raw)
                 g_resetHoldStart = millis();
             }
         } else if (g_resetHeld) {
+            const uint32_t held = millis() - g_resetHoldStart;
+            if (held < 40) {
+                // Bounce — keep the 5s wipe timer running.
+                return;
+            }
             g_resetHeld = false;
-            Serial.println(F("Cardputer KB: previous screen"));
-            switchToPrevScreen();
+            if (held < CARDPUTER_RESET_HOLD_MS) {
+                Serial.println(F("Cardputer KB: previous screen"));
+                switchToPrevScreen();
+            }
         }
         return;
     }
@@ -244,6 +281,10 @@ bool cardputerKeyboardBegin()
     Wire.beginTransmission(TCA8418_I2C_ADDR);
     if (Wire.endTransmission() != 0) {
         Serial.println(F("Cardputer KB: TCA8418 not found at 0x34"));
+        if (g0Held()) {
+            g_wantsConfig = true;
+            Serial.println(F("Cardputer KB: G0 held at boot — config portal"));
+        }
         return false;
     }
 
@@ -253,28 +294,26 @@ bool cardputerKeyboardBegin()
         !writeReg(TCA8418_REG_KP_GPIO3, 0x00) ||
         !writeReg(TCA8418_REG_CFG, TCA8418_CFG_INT_CFG | TCA8418_CFG_KE_IEN)) {
         Serial.println(F("Cardputer KB: TCA8418 init write failed"));
+        if (g0Held()) {
+            g_wantsConfig = true;
+            Serial.println(F("Cardputer KB: G0 held at boot — config portal"));
+        }
         return false;
     }
 
-    flushFifo();
+    // Do NOT flushFifo() here. A boot-held Enter/C/W press is already queued;
+    // flushing it then waiting 30ms leaves an empty FIFO while the key is
+    // still down, so wantsConfig stays false and the portal never opens.
+    delay(50); // TCA8418 debounce after keypad enable (~50 ms)
+    drainFifoForHeldConfig();
     delay(30);
+    drainFifoForHeldConfig();
 
-    // Drain any keys already down (boot-time config combo).
-    uint8_t ev = 0;
-    while (readReg(TCA8418_REG_KEY_EVENT_A, &ev) && ev != 0) {
-        const bool pressed = (ev & 0x80) != 0;
-        uint8_t row = 0xFF, col = 0xFF;
-        if (pressed && mapRawToPhysical((uint8_t)(ev & 0x7F), &row, &col)) {
-            const uint8_t key = kKeyMap[row][col];
-            if (key == KEY_ENTER || key == 'c' || key == 'w') {
-                g_wantsConfig = true;
-            }
-        }
+    if (g0Held()) {
+        g_wantsConfig = true;
+        Serial.println(F("Cardputer KB: G0 held at boot — config portal"));
     }
-    writeReg(TCA8418_REG_INT_STAT, 0x03);
 
-    // Also treat G0 (PIN_BUTTON_1) held at boot as "open portal" when used
-    // together with a keyboard key — Enter/C/W already set the flag.
     g_available = true;
     Serial.println(g_wantsConfig
                        ? F("Cardputer KB: TCA8418 ready (config key held)")
@@ -289,6 +328,17 @@ bool cardputerKeyboardAvailable()
 
 bool cardputerKeyboardWantsConfig()
 {
+    return g_wantsConfig;
+}
+
+bool cardputerKeyboardPollConfigHeld()
+{
+    if (g_available) {
+        drainFifoForHeldConfig();
+    }
+    if (g0Held()) {
+        g_wantsConfig = true;
+    }
     return g_wantsConfig;
 }
 

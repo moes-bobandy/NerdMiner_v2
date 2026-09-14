@@ -30,8 +30,13 @@ bool cardputerKeyboardBegin();
 /// True after a successful begin() (chip ACK at 0x34).
 bool cardputerKeyboardAvailable();
 
-/// True if Enter or C was held during begin() — open WiFi config portal.
+/// True if Enter, C, W, or G0 was held at begin() / splash — open WiFi portal.
 bool cardputerKeyboardWantsConfig();
+
+/// Re-sample boot-held Enter/C/W (FIFO) and G0. Does not dispatch nav keys.
+/// Call through the loading splash and again just before init_WifiManager so
+/// dual EXT init cannot miss a still-held config combo.
+bool cardputerKeyboardPollConfigHeld();
 
 /// Poll FIFO and dispatch UI actions (next/prev screen, rotate, backlight, reset).
 void cardputerKeyboardTick();

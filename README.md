@@ -197,8 +197,9 @@ G0 still behaves as a one-button device. The 56-key keyboard also drives the UI:
 - Short tap Backspace (`KEY_BACKSPACE` / HID `0x2A`) > previous screen
 - `1`–`4` > jump to a cyclic screen
 - `r` > rotate; `b` / Tab / Fn+\` > backlight
-- Hold Backspace (`KEY_BACKSPACE` / HID `0x2A`) 5 seconds > reset configuration
+- Hold Backspace (`KEY_BACKSPACE` / HID `0x2A`) 5 seconds > reset configuration, clear Wi‑Fi, reboot into portal
 - Hold Enter, `c`, or `w` at boot > Wi‑Fi config portal
+- Hold G0 during the loading splash > Wi‑Fi config portal (not during power-on reset)
 
 #### Two button devices:
 

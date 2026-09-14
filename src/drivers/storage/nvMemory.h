@@ -16,6 +16,10 @@ public:
     bool saveConfig(TSettings* Settings);
     bool loadConfig(TSettings* Settings);
     bool deleteConfig();
+    /// Sticky SPIFFS flag so Backspace-5s wipe re-enters the portal next boot
+    /// even if an SD config.json is present (SD fallback still works without it).
+    bool armForcePortal();
+    bool consumeForcePortal();
 private:
     bool init();
     bool Initialized_;

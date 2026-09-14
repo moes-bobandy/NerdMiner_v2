@@ -130,12 +130,50 @@ bool nvMemory::loadConfig(TSettings* Settings)
     return false;
 }
 
+#define FORCE_PORTAL_FILE "/force_portal"
+
 /// @brief Delete config file from SPIFFS
 /// @return true on successs
 bool nvMemory::deleteConfig()
 {
+    if (!init()) {
+        Serial.println("SPIFS: Erasing config file failed (not mounted)");
+        return false;
+    }
     Serial.println("SPIFS: Erasing config file..");
+    if (!SPIFFS.exists(JSON_CONFIG_FILE)) {
+        return true;
+    }
     return SPIFFS.remove(JSON_CONFIG_FILE); //Borramos fichero
+}
+
+bool nvMemory::armForcePortal()
+{
+    if (!init()) {
+        return false;
+    }
+    File f = SPIFFS.open(FORCE_PORTAL_FILE, "w");
+    if (!f) {
+        Serial.println("SPIFS: Failed to arm force-portal flag");
+        return false;
+    }
+    f.print("1");
+    f.close();
+    Serial.println("SPIFS: Force portal on next boot");
+    return true;
+}
+
+bool nvMemory::consumeForcePortal()
+{
+    if (!init()) {
+        return false;
+    }
+    if (!SPIFFS.exists(FORCE_PORTAL_FILE)) {
+        return false;
+    }
+    SPIFFS.remove(FORCE_PORTAL_FILE);
+    Serial.println("SPIFS: Consumed force-portal flag");
+    return true;
 }
 
 /// @brief Prepare and mount SPIFFS
@@ -163,6 +201,8 @@ nvMemory::~nvMemory() {}
 bool nvMemory::saveConfig(TSettings* Settings) { return false; }
 bool nvMemory::loadConfig(TSettings* Settings) { return false; }
 bool nvMemory::deleteConfig() { return false; }
+bool nvMemory::armForcePortal() { return false; }
+bool nvMemory::consumeForcePortal() { return false; }
 bool nvMemory::init() { return false; }
 
 
