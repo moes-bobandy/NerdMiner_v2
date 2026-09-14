@@ -45,11 +45,9 @@
 #define ILI9341_MADCTL_MH  0x04
 
 // Contract v2.6: boot-only MADCTL MV|BGR = 0x28 (no MX, no MY, no MH, no ML).
-// Field: 0x28 + SW Y-flip is right-side-up but L/R mirrored. Do NOT set MADCTL
-// MX to fix X — that re-broke Y (0xAC / 0x38). Keep BGR. Write once in sendInit.
-// Software X+Y on push/compose: reverse ROWS (extFlipY) and COLUMNS (extFlipX,
-// mirror each row horizontally) so stock chrome reads LTR and upright.
-// Do NOT set MY/MH/ML.
+// Keep software Y-flip ROWS only (extFlipY + reverse row writes) — do not change.
+// SW X-flip is COLUMNS on EXT push/compose only: mirror each row horizontally
+// (pixels L↔R). Do NOT set MADCTL MX/MY/MH/ML (0xAC / 0x38 re-broke Y).
 // A/B override: -DEXT_TFT_MADCTL=  (rollbacks: 0xE8, 0xA8, 0x68, 0xAC, 0x38).
 #ifndef EXT_TFT_MADCTL
 #define EXT_TFT_MADCTL (ILI9341_MADCTL_MV | ILI9341_MADCTL_BGR)
@@ -73,6 +71,8 @@ static inline int16_t extFlipY(int16_t y, int16_t h)
 #endif
 }
 
+// Documented helper: 320-wide push window is identity (extFlipX(0,320)==0).
+// X-flip is applied as in-row pixel reverse on PushImage / PushImageScaled.
 static inline int16_t extFlipX(int16_t x, int16_t w)
 {
 #if EXT_TFT_SW_FLIP_X
@@ -236,10 +236,10 @@ static void writeData(uint8_t data)
 
 static void setAddrWindow(int16_t x, int16_t y, int16_t w, int16_t h)
 {
-    // Logical compose space stays 320x240. Flip X+Y here so FillRect / text /
-    // blit share one transform. Callers still pass unflipped x,y; emitters
-    // that write in scan order must reverse source columns/rows to match.
-    x = extFlipX(x, w);
+    // Logical compose space stays 320x240. Flip Y here so FillRect / text /
+    // blit share one transform (v2.5, unchanged). X-flip is push-only: reverse
+    // columns in the pixel stream, not the CASET window (full-width identity).
+    (void)extFlipX(x, w);
     y = extFlipY(y, h);
     const int16_t x1 = (int16_t)(x + w - 1);
     const int16_t y1 = (int16_t)(y + h - 1);
@@ -688,12 +688,7 @@ int16_t ili9341ExtDrawChar(int16_t x, int16_t y, char c, uint16_t fg, uint16_t b
 #endif
     {
         uint32_t p = 0;
-#if EXT_TFT_SW_FLIP_X
-        for (int col = 5; col >= 0; --col)
-#else
-        for (int col = 0; col < 6; ++col)
-#endif
-        {
+        for (int col = 0; col < 6; ++col) {
             uint16_t color = bg;
             if (col < 5 && (cols[col] & (1 << row))) {
                 color = fg;

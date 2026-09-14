@@ -270,10 +270,10 @@ class DualScreenContractTests(unittest.TestCase):
         def flip_y(y: int, h: int) -> int:
             return height - y - h
 
-        self.assertEqual(flip_x(0, 320), 0)  # full-width window is identity
+        # Window X is not remapped (push reverses pixels in-row).
+        self.assertEqual(flip_x(0, 320), 0)
         self.assertEqual(flip_y(0, 240), 0)
         self.assertEqual(flip_y(30, 180), 30)  # centered 320x180 art
-        self.assertEqual(flip_x(8, 6), 306)  # left glyph → right-side window
         row = list(range(320))
         rev = list(reversed(row))
         self.assertEqual(rev[0], 319)
