@@ -123,9 +123,12 @@ void setup()
   /******** PRINT INIT SCREEN *****/
   drawLoadingScreen();
 #ifdef M5_CARDPUTER_ADV
-  // Dual EXT init already ran. Splash poll is physically held Enter/C/W/G0
-  // only (stale FIFO press+release after a portal restart must not re-arm).
-  {
+  // Dual EXT init already ran. If /sta_first is armed (portal just saved),
+  // ignore Enter/C/W/G0 and keep the loading/Connecting splash.
+  if (nvMem.peekStaFirst()) {
+    cardputerKeyboardIgnoreForcePortal();
+    delay(2 * SECOND_MS);
+  } else {
     const unsigned long until = millis() + 2 * SECOND_MS;
     while ((long)(until - millis()) > 0) {
       cardputerKeyboardPollConfigHeld();
@@ -137,7 +140,11 @@ void setup()
 #endif
 
   /******** SHOW LED INIT STATUS (devices without screen) *****/
+#ifdef M5_CARDPUTER_ADV
+  mMonitor.NerdStatus = nvMem.peekStaFirst() ? NM_Connecting : NM_waitingConfig;
+#else
   mMonitor.NerdStatus = NM_waitingConfig;
+#endif
   doLedStuff(0);
 
 #ifdef SDMMC_1BIT_FIX

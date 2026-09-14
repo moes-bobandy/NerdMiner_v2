@@ -131,6 +131,7 @@ bool nvMemory::loadConfig(TSettings* Settings)
 }
 
 #define FORCE_PORTAL_FILE "/force_portal"
+#define STA_FIRST_FILE "/sta_first"
 
 /// @brief Delete config file from SPIFFS
 /// @return true on successs
@@ -176,6 +177,43 @@ bool nvMemory::consumeForcePortal()
     return true;
 }
 
+bool nvMemory::armStaFirst()
+{
+    if (!init()) {
+        return false;
+    }
+    File f = SPIFFS.open(STA_FIRST_FILE, "w");
+    if (!f) {
+        Serial.println("SPIFS: Failed to arm sta-first flag");
+        return false;
+    }
+    f.print("1");
+    f.close();
+    Serial.println("SPIFS: STA-first on next boot");
+    return true;
+}
+
+bool nvMemory::peekStaFirst()
+{
+    if (!init()) {
+        return false;
+    }
+    return SPIFFS.exists(STA_FIRST_FILE);
+}
+
+bool nvMemory::consumeStaFirst()
+{
+    if (!init()) {
+        return false;
+    }
+    if (!SPIFFS.exists(STA_FIRST_FILE)) {
+        return false;
+    }
+    SPIFFS.remove(STA_FIRST_FILE);
+    Serial.println("SPIFS: Consumed sta-first flag");
+    return true;
+}
+
 /// @brief Prepare and mount SPIFFS
 /// @return true on success
 bool nvMemory::init()
@@ -203,6 +241,9 @@ bool nvMemory::loadConfig(TSettings* Settings) { return false; }
 bool nvMemory::deleteConfig() { return false; }
 bool nvMemory::armForcePortal() { return false; }
 bool nvMemory::consumeForcePortal() { return false; }
+bool nvMemory::armStaFirst() { return false; }
+bool nvMemory::peekStaFirst() { return false; }
+bool nvMemory::consumeStaFirst() { return false; }
 bool nvMemory::init() { return false; }
 
 

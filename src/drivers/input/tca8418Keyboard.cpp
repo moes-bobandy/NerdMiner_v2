@@ -52,6 +52,7 @@ static const uint8_t kKeyMap[4][14] = {
 static bool g_available = false;
 static bool g_wantsConfig = false;
 static bool g_portalLatchConsumed = false;
+static bool g_ignoreForcePortal = false;
 static uint8_t g_heldConfigMask = 0;
 static bool g_fn = false;
 static bool g_resetHeld = false;
@@ -297,6 +298,7 @@ bool cardputerKeyboardBegin()
     g_available = false;
     g_wantsConfig = false;
     g_portalLatchConsumed = false;
+    g_ignoreForcePortal = false;
     g_heldConfigMask = 0;
     g_fn = false;
     g_resetHeld = false;
@@ -360,11 +362,17 @@ bool cardputerKeyboardAvailable()
 
 bool cardputerKeyboardWantsConfig()
 {
+    if (g_ignoreForcePortal) {
+        return false;
+    }
     return g_wantsConfig;
 }
 
 bool cardputerKeyboardPollConfigHeld()
 {
+    if (g_ignoreForcePortal) {
+        return false;
+    }
     if (g_available) {
         drainFifoForHeldConfig();
     }
@@ -380,6 +388,13 @@ void cardputerKeyboardClearConfigLatch()
 {
     g_wantsConfig = false;
     g_portalLatchConsumed = true;
+}
+
+void cardputerKeyboardIgnoreForcePortal()
+{
+    g_wantsConfig = false;
+    g_portalLatchConsumed = true;
+    g_ignoreForcePortal = true;
 }
 
 void cardputerKeyboardTick()

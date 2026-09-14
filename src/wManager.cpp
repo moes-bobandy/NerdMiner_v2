@@ -127,6 +127,7 @@ void reset_configuration()
 {
     Serial.println("Erasing Config, restarting");
     nvMem.deleteConfig();
+    nvMem.consumeStaFirst();
     nvMem.armForcePortal();
     resetStat();
     wm.resetSettings();
@@ -156,27 +157,38 @@ void init_WifiManager()
 
     // Change to true when testing to force configuration every time we run
     bool forceConfig = false;
+    const bool wipePortal = nvMem.consumeForcePortal();
+    const bool staFirst = nvMem.consumeStaFirst();
 
-#if defined(PIN_BUTTON_2)
-    // Check if button2 is pressed to enter configMode with actual configuration
-    if (!digitalRead(PIN_BUTTON_2)) {
-        Serial.println(F("Button pressed to force start config mode"));
-        forceConfig = true;
-        wm.setBreakAfterConfig(true); //Set to detect config edition and save
-    }
-#endif
-#ifdef M5_CARDPUTER_ADV
-    // Boot latch (begin / splash) OR keys still physically held.
-    if (cardputerKeyboardWantsConfig() || cardputerKeyboardPollConfigHeld()) {
-        Serial.println(F("Cardputer KB: Enter/C/W/G0 held — start config portal"));
-        forceConfig = true;
-        wm.setBreakAfterConfig(true);
-    }
-#endif
-    if (nvMem.consumeForcePortal()) {
+    if (wipePortal) {
         Serial.println(F("Config reset — start config portal"));
         forceConfig = true;
         wm.setBreakAfterConfig(true);
+    }
+#ifdef M5_CARDPUTER_ADV
+    if (staFirst) {
+        // Portal save one-shot: ignore leftover Enter/C/W/G0 and try STA first.
+        cardputerKeyboardIgnoreForcePortal();
+        Serial.println(F("STA-first boot — ignore Enter/C/W/G0 force-portal"));
+    }
+#endif
+    if (!wipePortal && !staFirst) {
+#if defined(PIN_BUTTON_2)
+        // Check if button2 is pressed to enter configMode with actual configuration
+        if (!digitalRead(PIN_BUTTON_2)) {
+            Serial.println(F("Button pressed to force start config mode"));
+            forceConfig = true;
+            wm.setBreakAfterConfig(true); //Set to detect config edition and save
+        }
+#endif
+#ifdef M5_CARDPUTER_ADV
+        // Boot latch (begin / splash) OR keys still physically held.
+        if (cardputerKeyboardWantsConfig() || cardputerKeyboardPollConfigHeld()) {
+            Serial.println(F("Cardputer KB: Enter/C/W/G0 held — start config portal"));
+            forceConfig = true;
+            wm.setBreakAfterConfig(true);
+        }
+#endif
     }
     // Explicitly set WiFi mode
     WiFi.mode(WIFI_STA);
@@ -296,11 +308,22 @@ void init_WifiManager()
         nvMem.saveConfig(&Settings);
     };
 
-    // Contract v1.1: after BreakAfterConfig save, always persist. Restart into
-    // mining only if STA is up. If not connected, do NOT ESP.restart() into
-    // initScreen splash — stay/re-enter setupModeScreen (WAITING CONFIG).
-    // Never arm /force_portal on connect fail.
-    auto runPortalUntilWifi = [&]() {
+    // Contract v1.1: on shouldSaveConfig, persist, clear sticky keys, arm
+    // /sta_first, restart. Next splash ignores Enter/C/W/G0 and tries STA.
+    // /force_portal is wipe-only. Never arm it on connect fail.
+    auto commitPortalSave = [&]() {
+        Serial.println(F("Portal shouldSaveConfig — saving"));
+        saveFromPortal();
+#ifdef M5_CARDPUTER_ADV
+        cardputerKeyboardClearConfigLatch();
+        cardputerKeyboardIgnoreForcePortal();
+#endif
+        nvMem.armStaFirst();
+        delay(3 * SECOND_MS);
+        ESP.restart();
+    };
+
+    auto runConfigPortal = [&]() {
 #ifdef M5_CARDPUTER_ADV
         cardputerKeyboardClearConfigLatch();
 #endif
@@ -313,45 +336,31 @@ void init_WifiManager()
             drawSetupScreen();
             wm.startConfigPortal(apName, DEFAULT_WIFIPW);
             if (shouldSaveConfig) {
-                Serial.println(F("Portal shouldSaveConfig — saving"));
-                saveFromPortal();
-                if (WiFi.status() == WL_CONNECTED) {
-                    Serial.println(F("WiFi connected after portal save — restart into mining"));
-                    delay(3 * SECOND_MS);
-                    ESP.restart();
-                }
-                Serial.println(F("Portal save but STA not connected — re-enter config portal"));
-            } else {
-                Serial.println(F("Config portal ended without save — re-enter WAITING CONFIG"));
+                commitPortalSave();
             }
+            Serial.println(F("Config portal ended without save — re-enter WAITING CONFIG"));
         }
     };
 
     Serial.println("AllDone: ");
     if (forceConfig)
     {
-        runPortalUntilWifi();
+        runConfigPortal();
     }
     else
     {
-        //Tratamos de conectar con la configuración inicial ya almacenada
+        // STA first: Connecting only. No setup QR until a real STA timeout.
         mMonitor.NerdStatus = NM_Connecting;
-        // disable captive portal redirection
         wm.setCaptivePortalEnable(true);
         wm.setConfigPortalBlocking(true);
-        wm.setEnableConfigPortal(true);
-        // if (!wm.autoConnect(Settings.WifiSSID.c_str(), Settings.WifiPW.c_str()))
+        wm.setEnableConfigPortal(false);
         if (!wm.autoConnect(apName, DEFAULT_WIFIPW))
         {
             Serial.println("Failed to connect to configured WIFI, and hit timeout");
             if (shouldSaveConfig) {
-                saveFromPortal();
-                if (WiFi.status() == WL_CONNECTED) {
-                    delay(3 * SECOND_MS);
-                    ESP.restart();
-                }
+                commitPortalSave();
             }
-            runPortalUntilWifi();
+            runConfigPortal();
         }
     }
     

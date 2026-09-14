@@ -20,6 +20,10 @@ public:
     /// even if an SD config.json is present (SD fallback still works without it).
     bool armForcePortal();
     bool consumeForcePortal();
+    /// One-shot after portal save: next splash ignores Enter/C/W/G0 and tries STA first.
+    bool armStaFirst();
+    bool peekStaFirst();
+    bool consumeStaFirst();
 private:
     bool init();
     bool Initialized_;
