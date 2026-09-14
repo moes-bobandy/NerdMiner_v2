@@ -64,7 +64,7 @@ Every time an stratum job notification is received miner update its current work
 - LILYGO T-HMI ([Aliexpress link\*](https://s.click.aliexpress.com/e/_oFII4s2)) / Dev support: @cosmicpsyop
 - ESP32-C3 0.42 Inch OLED ([Aliexpress link\*](https://s.click.aliexpress.com/e/_oDmT4Id) / Dev support: @mrthiti / ⚡ wallet@thiti.dev)
 - ESP32-S3 0.42 Inch OLED ([Aliexpress link\*](https://s.click.aliexpress.com/e/_oFIMUoh) / Dev support: @mrthiti / ⚡ wallet@thiti.dev)
-- M5Stack Cardputer Adv ([Board Info](https://docs.m5stack.com/en/core/Cardputer%20adv) / PlatformIO env `M5-Cardputer-Adv`, TCA8418 keyboard UI)
+- M5Stack Cardputer Adv ([Board Info](https://docs.m5stack.com/en/core/Cardputer%20adv) / PlatformIO env `M5-Cardputer-Adv`, TCA8418 keyboard UI; dual-screen porkchop env `M5-Cardputer-Adv-dual`)
 
 #### Cardputer Adv + bmorcelli Launcher
 
@@ -74,9 +74,14 @@ Flash Launcher for `m5stack-cardputer-adv` first, then install the **app-only** 
 pio run -e M5-Cardputer-Adv
 python3 scripts/export_launcher_bin.py
 # artifact: firmware/launcher/NerdMiner_v2_M5-Cardputer-Adv.bin
+
+pio run -e M5-Cardputer-Adv-dual
+python3 scripts/export_launcher_bin.py --env M5-Cardputer-Adv-dual
+# artifact: firmware/launcher/NerdMiner_v2_M5-Cardputer-Adv-dual.bin
 ```
 
-Keyboard map, install steps, and artifact paths: [docs/cardputer-adv-launcher.md](docs/cardputer-adv-launcher.md).
+Keyboard map, install steps, and artifact paths: [docs/cardputer-adv-launcher.md](docs/cardputer-adv-launcher.md).  
+INT=nav / EXT=mining pin contract: [docs/cardputer-adv-dual-screen.md](docs/cardputer-adv-dual-screen.md) (v2.6: MADCTL `0x28` + software X+Y flip).
 
 \*Affiliate links
 

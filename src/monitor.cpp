@@ -268,8 +268,16 @@ static std::list<double> s_hashrate_avg_list;
 static double s_hashrate_summ = 0.0;
 static uint8_t s_hashrate_recalc = 0;
 
+static String s_lastHashRate = "0.00";
+
 String getCurrentHashRate(unsigned long mElapsed)
 {
+  // Dual INT used to pass 0 every paint. 0/0 = NaN and poisons the 10-sample
+  // averager, so KH/s sticks at 0/nan even while hashing. Never mutate on 0.
+  if (mElapsed == 0) {
+    return s_lastHashRate;
+  }
+
   double hashrate = (double)elapsedKHs * 1000.0 / (double)mElapsed;
 
   s_hashrate_summ += hashrate;
@@ -310,12 +318,16 @@ String getCurrentHashRate(unsigned long mElapsed)
   switch (s_hashrate_scale)
   {
     case HashRateScale_99KH:
-      return String(avg_hashrate, 2);
+      s_lastHashRate = String(avg_hashrate, 2);
+      break;
     case HashRateScale_999KH:
-      return String(avg_hashrate, 1);
+      s_lastHashRate = String(avg_hashrate, 1);
+      break;
     default:
-      return String((int)avg_hashrate );
+      s_lastHashRate = String((int)avg_hashrate);
+      break;
   }
+  return s_lastHashRate;
 }
 
 mining_data getMiningData(unsigned long mElapsed)
