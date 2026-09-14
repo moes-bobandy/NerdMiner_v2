@@ -119,7 +119,7 @@ void nerd_draw_int_live_pulse(unsigned long mElapsed)
     if (!g_ext) {
         return;
     }
-    // Bypasses s_intDirty — connecting/hash activity must move while mining.
+    // Bypasses s_intDirty. v2.6: no extra HUD — stock V1 compose is live.
     tDisplayV1PaintLivePulse(mElapsed);
 }
 

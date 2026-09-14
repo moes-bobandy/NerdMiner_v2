@@ -26,7 +26,8 @@ void tDisplayV1StockFrame(int screenIndex, const uint16_t **bits, uint16_t *w, u
 // pushToInt=false leaves ST7789 unchanged — EXT scale-blits the buffer.
 void tDisplayV1ComposeCyclic(int screenIndex, unsigned long mElapsed, bool pushToInt);
 const uint16_t *tDisplayV1SpriteBits(uint16_t *w, uint16_t *h);
-// Tiny 1 Hz INT pulse (WIFI/CONN/HASH + uptime). Not a full V1 goods paint.
+// Tiny 1 Hz INT pulse hook. v2.6 does not paint a debug overlay; live ticks
+// are the stock V1 cyclic compose (nerd_draw_int_nav_hud).
 void tDisplayV1PaintLivePulse(unsigned long mElapsed);
 
 void nerd_dual_init();

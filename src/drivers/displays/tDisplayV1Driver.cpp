@@ -2,10 +2,6 @@
 
 #ifdef V1_DISPLAY
 
-#ifdef NERDMINER_DUAL_SCREEN
-#include <WiFi.h>
-#include <stdio.h>
-#endif
 #include <TFT_eSPI.h>
 #include "media/images_240_135.h"
 #include "media/myFonts.h"
@@ -255,7 +251,13 @@ void tDisplay_LoadingScreen(void)
   tft.fillScreen(TFT_BLACK);
   tft.pushImage(0, 0, initWidth, initHeight, initScreen);
   tft.setTextColor(TFT_BLACK);
+#ifdef NERDMINER_DUAL_SCREEN
+  // 240x135 INT: init bitmap is 128 tall. Stock T-Display y=147 is off-glass.
+  const int16_t verY = (HEIGHT - 16 >= 0) ? (int16_t)(HEIGHT - 16) : 0;
+  tft.drawString(CURRENT_VERSION, 24, verY, FONT2);
+#else
   tft.drawString(CURRENT_VERSION, 24, 147, FONT2);
+#endif
 }
 
 void tDisplay_SetupScreen(void)
@@ -340,30 +342,9 @@ const uint16_t *tDisplayV1SpriteBits(uint16_t *w, uint16_t *h)
 
 void tDisplayV1PaintLivePulse(unsigned long mElapsed)
 {
-  // Overlay only — connecting/hash must change every second (not stuck at 0).
-  // Do not call getCurrentHashRate here (averager lives in getMiningData).
-  extern uint32_t elapsedKHs;
-  extern uint64_t upTime;
-  extern monitor_data mMonitor;
-
-  const char *st;
-  if (WiFi.status() != WL_CONNECTED) {
-    st = "WIFI";
-  } else if (mMonitor.NerdStatus == NM_hashing || elapsedKHs > 0) {
-    st = "HASH";
-  } else {
-    st = "CONN";
-  }
-
+  // v2.6: do not overlay a debug HUD (`WIFI 0KH 12s`) on the ST7789.
+  // Live ticks come from nerd_draw_int_nav_hud → stock V1 cyclic compose.
   (void)mElapsed;
-  char buf[32];
-  snprintf(buf, sizeof(buf), "%s %luKH %lus", st, (unsigned long)elapsedKHs,
-           (unsigned long)upTime);
-
-  tft.setTextDatum(TL_DATUM);
-  tft.setTextColor(0xDEDB, TFT_BLACK);
-  tft.fillRect(0, 126, 160, 9, TFT_BLACK);
-  tft.drawString(buf, 2, 126, 1);
 }
 #endif
 

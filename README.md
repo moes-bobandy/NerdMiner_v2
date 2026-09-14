@@ -81,7 +81,7 @@ python3 scripts/export_launcher_bin.py --env M5-Cardputer-Adv-dual
 ```
 
 Keyboard map, install steps, and artifact paths: [docs/cardputer-adv-launcher.md](docs/cardputer-adv-launcher.md).  
-INT=nav / EXT=mining pin contract: [docs/cardputer-adv-dual-screen.md](docs/cardputer-adv-dual-screen.md) (v2.5: MADCTL `0x28` + software Y-flip).
+INT=nav / EXT=mining pin contract: [docs/cardputer-adv-dual-screen.md](docs/cardputer-adv-dual-screen.md) (v2.6: MADCTL `0x28` + software X+Y flip).
 
 \*Affiliate links
 

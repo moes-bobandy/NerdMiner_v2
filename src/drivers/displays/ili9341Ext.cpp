@@ -44,10 +44,11 @@
 #define ILI9341_MADCTL_BGR 0x08
 #define ILI9341_MADCTL_MH  0x04
 
-// Contract v2.5: boot-only MADCTL MV|BGR = 0x28 (no MX, no MY, no MH, no ML).
-// Field: 0x28 L/R-good + sharp, ONLY upside-down. 0xAC / 0x38 traded L/R vs Y.
-// Keep BGR. Write once in sendInit — do not rewrite MADCTL mid-run.
-// Fix Y in software: reverse ROWS only (vertical). Do NOT reverse columns / X.
+// Contract v2.6: boot-only MADCTL MV|BGR = 0x28 (no MX, no MY, no MH, no ML).
+// Field: 0x28 + SW Y-flip is right-side-up but L/R mirrored. Do NOT set MADCTL
+// MX to fix X — that re-broke Y (0xAC / 0x38). Keep BGR. Write once in sendInit.
+// Software X+Y on push/compose: reverse ROWS (extFlipY) and COLUMNS (extFlipX,
+// mirror each row horizontally) so stock chrome reads LTR and upright.
 // Do NOT set MY/MH/ML.
 // A/B override: -DEXT_TFT_MADCTL=  (rollbacks: 0xE8, 0xA8, 0x68, 0xAC, 0x38).
 #ifndef EXT_TFT_MADCTL
@@ -58,6 +59,10 @@
 #define EXT_TFT_SW_FLIP_Y 1
 #endif
 
+#ifndef EXT_TFT_SW_FLIP_X
+#define EXT_TFT_SW_FLIP_X 1
+#endif
+
 static inline int16_t extFlipY(int16_t y, int16_t h)
 {
 #if EXT_TFT_SW_FLIP_Y
@@ -65,6 +70,16 @@ static inline int16_t extFlipY(int16_t y, int16_t h)
 #else
     (void)h;
     return y;
+#endif
+}
+
+static inline int16_t extFlipX(int16_t x, int16_t w)
+{
+#if EXT_TFT_SW_FLIP_X
+    return (int16_t)(EXT_TFT_WIDTH - x - w);
+#else
+    (void)w;
+    return x;
 #endif
 }
 
@@ -221,9 +236,10 @@ static void writeData(uint8_t data)
 
 static void setAddrWindow(int16_t x, int16_t y, int16_t w, int16_t h)
 {
-    // Logical compose space stays 320x240. Flip Y here so FillRect / text /
-    // blit share one transform. Callers still pass unflipped y; row emitters
-    // that write top-to-bottom must reverse source rows when SW_FLIP_Y=1.
+    // Logical compose space stays 320x240. Flip X+Y here so FillRect / text /
+    // blit share one transform. Callers still pass unflipped x,y; emitters
+    // that write in scan order must reverse source columns/rows to match.
+    x = extFlipX(x, w);
     y = extFlipY(y, h);
     const int16_t x1 = (int16_t)(x + w - 1);
     const int16_t y1 = (int16_t)(y + h - 1);
@@ -460,8 +476,8 @@ bool ili9341ExtBegin()
     }
     g_ready = true;
 #endif
-    Serial.printf("EXT ILI9341: 320x240 ready MADCTL=0x%02X SW_FLIP_Y=%d (HSPI)\n",
-                  (unsigned)(EXT_TFT_MADCTL), (int)EXT_TFT_SW_FLIP_Y);
+    Serial.printf("EXT ILI9341: 320x240 ready MADCTL=0x%02X SW_FLIP_X=%d SW_FLIP_Y=%d (HSPI)\n",
+                  (unsigned)(EXT_TFT_MADCTL), (int)EXT_TFT_SW_FLIP_X, (int)EXT_TFT_SW_FLIP_Y);
     return g_ready;
 }
 
@@ -518,6 +534,26 @@ static void emitRgb565Swapped(const uint16_t *src, uint32_t count)
     }
 }
 
+// Mirror one row horizontally (v2.6 L/R). Last pixel is sent first.
+static void emitRgb565SwappedRev(const uint16_t *src, uint32_t count)
+{
+    uint8_t buf[128];
+    uint32_t remaining = count;
+    while (remaining) {
+        uint32_t n = remaining;
+        if (n > (sizeof(buf) / 2)) {
+            n = sizeof(buf) / 2;
+        }
+        for (uint32_t k = 0; k < n; ++k) {
+            const uint16_t c = pgm_read_word(&src[remaining - 1 - k]);
+            buf[k * 2] = (uint8_t)(c & 0xFF);
+            buf[k * 2 + 1] = (uint8_t)(c >> 8);
+        }
+        extSpi.writeBytes(buf, n * 2);
+        remaining -= n;
+    }
+}
+
 void ili9341ExtPushImage(int16_t x, int16_t y, int16_t w, int16_t h, const uint16_t *data)
 {
     if (!g_ready || !data || w <= 0 || h <= 0) {
@@ -526,9 +562,19 @@ void ili9341ExtPushImage(int16_t x, int16_t y, int16_t w, int16_t h, const uint1
     beginTxn();
     setAddrWindow(x, y, w, h);
     digitalWrite(EXT_TFT_CS, LOW);
+#if EXT_TFT_SW_FLIP_Y || EXT_TFT_SW_FLIP_X
 #if EXT_TFT_SW_FLIP_Y
-    for (int16_t row = (int16_t)(h - 1); row >= 0; --row) {
-        emitRgb565Swapped(data + (int32_t)row * w, (uint32_t)w);
+    for (int16_t row = (int16_t)(h - 1); row >= 0; --row)
+#else
+    for (int16_t row = 0; row < h; ++row)
+#endif
+    {
+        const uint16_t *line = data + (int32_t)row * w;
+#if EXT_TFT_SW_FLIP_X
+        emitRgb565SwappedRev(line, (uint32_t)w);
+#else
+        emitRgb565Swapped(line, (uint32_t)w);
+#endif
     }
 #else
     emitRgb565Swapped(data, (uint32_t)w * (uint32_t)h);
@@ -548,7 +594,7 @@ void ili9341ExtPushImageScaled(int16_t x, int16_t y, int16_t dw, int16_t dh,
     digitalWrite(EXT_TFT_CS, LOW);
     uint8_t buf[160];
     uint32_t bp = 0;
-    // SW Y-flip: rows only (bottom→top). Columns stay left→right (dx 0..dw-1).
+    // SW X+Y: rows bottom→top, columns right→left (mirror each row).
 #if EXT_TFT_SW_FLIP_Y
     for (int16_t dy = (int16_t)(dh - 1); dy >= 0; --dy)
 #else
@@ -557,7 +603,12 @@ void ili9341ExtPushImageScaled(int16_t x, int16_t y, int16_t dw, int16_t dh,
     {
         const int16_t sy = (int16_t)((int32_t)dy * sh / dh);
         const uint16_t *row = data + (int32_t)sy * sw;
-        for (int16_t dx = 0; dx < dw; ++dx) {
+#if EXT_TFT_SW_FLIP_X
+        for (int16_t dx = (int16_t)(dw - 1); dx >= 0; --dx)
+#else
+        for (int16_t dx = 0; dx < dw; ++dx)
+#endif
+        {
             const int16_t sx = (int16_t)((int32_t)dx * sw / dw);
             const uint16_t c = pgm_read_word(&row[sx]);
             buf[bp++] = (uint8_t)(c & 0xFF);
@@ -637,7 +688,12 @@ int16_t ili9341ExtDrawChar(int16_t x, int16_t y, char c, uint16_t fg, uint16_t b
 #endif
     {
         uint32_t p = 0;
-        for (int col = 0; col < 6; ++col) {
+#if EXT_TFT_SW_FLIP_X
+        for (int col = 5; col >= 0; --col)
+#else
+        for (int col = 0; col < 6; ++col)
+#endif
+        {
             uint16_t color = bg;
             if (col < 5 && (cols[col] & (1 << row))) {
                 color = fg;

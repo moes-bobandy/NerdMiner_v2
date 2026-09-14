@@ -122,16 +122,15 @@ class DualScreenContractTests(unittest.TestCase):
         driver = read("src/drivers/displays/ili9341ExtDriver.cpp")
         self.assertIn("enterExtScreen", driver)
         self.assertIn("s_extScreen", driver)
-        self.assertIn("takeField", driver)
-        self.assertIn("BLOCK TEMPLATES", driver)
-        self.assertIn("BEST DIFFICULTY", driver)
-        self.assertIn("32BITS SHARES", driver)
-        self.assertIn("VALID BLOCKS", driver)
         self.assertIn("tDisplayV1ComposeCyclic", driver)
         self.assertIn("blitLiveStock", driver)
         self.assertNotIn("C_ORANGE", driver)
         self.assertNotIn("0xFD20", driver)
         self.assertNotIn("static void fillContentBand", driver)
+        self.assertNotIn("drawGoodsBand", driver)
+        self.assertNotIn("dirtyUptimeTick", driver)
+        self.assertNotIn("ili9341ExtDrawText", driver)
+        self.assertNotIn("%luKH", driver)
         # Full clear lives only in enterExtScreen (screen-index change).
         self.assertEqual(driver.count("ili9341ExtFillScreen("), 1)
         for name in (
@@ -151,13 +150,16 @@ class DualScreenContractTests(unittest.TestCase):
         self.assertNotIn("while (count--)", low)
         self.assertIn("ili9341ExtBeginFrame", low)
         self.assertIn("while (s_frame > 0)", low)
-        # v2.5: boot-only MV|BGR = 0x28 (no MX/MY/MH/ML). SW Y-flip for upside-down.
+        # v2.6: boot-only MV|BGR = 0x28 (no MX/MY/MH/ML). SW X+Y on push.
         self.assertIn(
             "#define EXT_TFT_MADCTL (ILI9341_MADCTL_MV | ILI9341_MADCTL_BGR)",
             low,
         )
         self.assertIn("#define EXT_TFT_SW_FLIP_Y 1", low)
+        self.assertIn("#define EXT_TFT_SW_FLIP_X 1", low)
         self.assertIn("extFlipY", low)
+        self.assertIn("extFlipX", low)
+        self.assertIn("emitRgb565SwappedRev", low)
         self.assertEqual(low.count("writeCommand(ILI9341_MADCTL)"), 1)
         self.assertNotIn(
             "ILI9341_MADCTL_MX | ILI9341_MADCTL_MY | ILI9341_MADCTL_MV | ILI9341_MADCTL_BGR",
@@ -200,6 +202,8 @@ class DualScreenContractTests(unittest.TestCase):
         self.assertIn("s_intDirty", dual)
         self.assertIn("nerd_draw_int_live_pulse", dual)
         self.assertIn("tDisplayV1PaintLivePulse", dual)
+        self.assertNotIn("%luKH", v1)
+        self.assertNotIn("drawString(buf, 2, 126", v1)
         self.assertNotIn("NAV  INT ST7789", dual)
         self.assertIn("ili9341ExtPushImageScaled", low)
         disp = read("src/drivers/displays/display.cpp")
@@ -216,10 +220,11 @@ class DualScreenContractTests(unittest.TestCase):
         mon = read("src/monitor.cpp")
         self.assertIn("if (mElapsed == 0)", mon)
         self.assertIn("s_lastHashRate", mon)
-        self.assertIn("for (int16_t dx = 0; dx < dw; ++dx)", low)
-        self.assertNotIn("dx = (int16_t)(dw - 1)", low)
-        self.assertIn("rows only", low)
+        self.assertIn("for (int16_t dx = (int16_t)(dw - 1); dx >= 0; --dx)", low)
+        self.assertIn("columns right→left", low)
         self.assertNotIn("tDisplayV1ComposeCyclic(screenIndex, 0, false)", driver)
+        # Loading version stays inside 240x135 (not T-Display y=147).
+        self.assertIn("HEIGHT - 16", v1)
 
     def test_docs_and_launcher_recipe(self) -> None:
         docs = read("docs/cardputer-adv-dual-screen.md")
@@ -240,7 +245,9 @@ class DualScreenContractTests(unittest.TestCase):
         self.assertIn("0x38", docs)
         self.assertIn("MX|MY|MV|BGR", docs)
         self.assertIn("SW_FLIP_Y", docs)
+        self.assertIn("SW_FLIP_X", docs)
         self.assertIn("BLOCK TEMPLATES", docs)
+        self.assertIn("v2.6", docs)
         self.assertIn("v2.5", docs)
         self.assertIn("v2.2", docs)
         self.assertIn("v2.2b", docs)
@@ -249,9 +256,28 @@ class DualScreenContractTests(unittest.TestCase):
         self.assertIn("C_ORANGE", docs)
         self.assertIn("not identical clones", docs)
         self.assertIn("nav/status only", docs)
-        self.assertIn("mining goods", docs)
+        self.assertIn("Stock V1 chrome only", docs)
         launcher = read("docs/cardputer-adv-launcher.md")
         self.assertIn("M5-Cardputer-Adv-dual", launcher)
+
+    def test_sw_xy_flip_window_geometry(self) -> None:
+        """Host replica of extFlipX/extFlipY + row reverse (v2.6)."""
+        width, height = 320, 240
+
+        def flip_x(x: int, w: int) -> int:
+            return width - x - w
+
+        def flip_y(y: int, h: int) -> int:
+            return height - y - h
+
+        self.assertEqual(flip_x(0, 320), 0)  # full-width window is identity
+        self.assertEqual(flip_y(0, 240), 0)
+        self.assertEqual(flip_y(30, 180), 30)  # centered 320x180 art
+        self.assertEqual(flip_x(8, 6), 306)  # left glyph → right-side window
+        row = list(range(320))
+        rev = list(reversed(row))
+        self.assertEqual(rev[0], 319)
+        self.assertEqual(rev[-1], 0)
 
 
 if __name__ == "__main__":

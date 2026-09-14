@@ -1,4 +1,4 @@
-# Cardputer Adv dual-screen — Dirt routing contract v1 / v2 / v2.1b / v2.2 / v2.2b / v2.5
+# Cardputer Adv dual-screen — Dirt routing contract v1 / v2 / v2.1b / v2.2 / v2.2b / v2.5 / v2.6
 
 INT **ST7789 240×135** is navigation. EXT **ILI9341 320×240** is mining.
 This is **not** a 1:1 blit of the built-in 240×135 frames onto the porkchop panel.
@@ -10,13 +10,13 @@ Stock PlatformIO env `M5-Cardputer-Adv` is unchanged (keyboard + Launcher path f
 | Surface | API | Hardware | Content |
 | --- | --- | --- | --- |
 | INT nav | `nerd_nav()` | ST7789 via stock TFT_eSPI **Setup215** / `tDisplayV1Driver` | Stock V1 cyclic screens (MinerScreen logo / BLOCK TEMPLATES / BEST DIFFICULTY / 32BITS SHARES / VALID BLOCKS / KH/s / uptime). Keyboard + G0 cycle them. Loading, setup, portal, backlight, rotate stay here. |
-| EXT mining | `nerd_mining()` | ILI9341 320×240 on HSPI | Same stock V1 visual scheme, scaled to 320×240, with a denser mining-goods band. Not a 1:1 blit and not a clone of INT. |
+| EXT mining | `nerd_mining()` | ILI9341 320×240 on HSPI | Same stock V1 visual scheme, scaled aspect-preserving (320×180, centered). Not a 1:1 blit, not a clone of INT, and **no goods-band overlay**. |
 | Fallback | `nerd_mining()` → `nerd_nav()` | INT only | EXT init fail or `-DNERDMINER_DUAL_FORCE_INT=1`. Full V1 cyclic screens on INT, same as stock. |
 
 When EXT is up, INT and EXT share the **stock V1 visual scheme** (logo, chrome, DigitalNumbers / `0xDEDB` like single-screen NerdMiner) but **different info** — not identical clones:
 
-- **INT (240×135):** nav/status only, with live ticks. Dense stock tDisplayV1 screens painted on **live 1 Hz `mElapsed`** (plus dirty/view for nav). Do **not** force `mElapsed==0` — that froze DigitalNumbers on zeros and poisoned KH/s (`0/0` NaN in the averager). Tiny `WIFI` / `CONN` / `HASH` + uptime pulse still bypasses `s_intDirty`. No custom / yellowish HUD (`C_ORANGE` banned).
-- **EXT (320×240):** mining goods. Same stock V1 frame (composed via `tDisplayV1ComposeCyclic` + DigitalNumbers) scaled to the porkchop **every 1 Hz tick** (`blitLiveStock` — not index-only, never re-compose with `mElapsed==0`). Goods-band dirty rects include KH/s, shares, `WIFI`/`CONN`/`HASH` + uptime so values move after WiFi join.
+- **INT (240×135):** nav/status only, with live ticks. Dense stock tDisplayV1 screens painted on **live 1 Hz `mElapsed`** (plus dirty/view for nav). Do **not** force `mElapsed==0` — that froze DigitalNumbers on zeros and poisoned KH/s (`0/0` NaN in the averager). No extra debug overlay (`WIFI 0KH 12s` / Serial HUD banned). No custom / yellowish HUD (`C_ORANGE` banned). Loading version stays inside 135 px (not leftover T-Display `y=147`).
+- **EXT (320×240):** mining. Same stock V1 frame (composed via `tDisplayV1ComposeCyclic` + DigitalNumbers) scaled aspect-preserving to 320×180 and **centered** on the porkchop **every 1 Hz tick** (`blitLiveStock` — not index-only, never re-compose with `mElapsed==0`). **No goods-band overlay** under the art — field v2.5 painted extra labels/uptime below the chrome (looked like debug numbers off-layout). Stock V1 chrome only.
 
 No stripped NETWORK-only debug chrome. No per-tick INT `fillSprite` except the stock screen's own `pushSprite`.
 
@@ -78,8 +78,9 @@ Optional flags on the dual env:
 | --- | --- |
 | `-DNERDMINER_DUAL_ASSUME_EXT=1` | Default. Porkchop pin list has no EXT MISO, so ID probe is best-effort. |
 | `-DNERDMINER_DUAL_FORCE_INT=1` | Force INT-only fallback (no EXT traffic). |
-| `-DEXT_TFT_MADCTL=0xE8` | Override boot MADCTL for A/B. Default is `MV|BGR` = `0x28` (no MX, no MY, no MH, no ML). Field FAIL: `MX|MY|MV|BGR` = `0xE8` still mirrored. Rollbacks: `0xE8`, `0xA8`, `0x68`, `0xAC`, `0x38`. |
+| `-DEXT_TFT_MADCTL=0xE8` | Override boot MADCTL for A/B. Default is `MV|BGR` = `0x28` (no MX, no MY, no MH, no ML). Field FAIL: `MX|MY|MV|BGR` = `0xE8` still mirrored. Do **not** set MX to fix L/R — that re-broke Y. Rollbacks: `0xE8`, `0xA8`, `0x68`, `0xAC`, `0x38`. |
 | `-DEXT_TFT_SW_FLIP_Y=0` | Disable software vertical flip of the EXT write path (default **1**). |
+| `-DEXT_TFT_SW_FLIP_X=0` | Disable software horizontal flip (mirror each row) of the EXT write path (default **1**). |
 
 ## Launcher (app-only `0xE9`)
 
@@ -142,11 +143,11 @@ On the dirt unit (porkchop EXT wired, dual bin, SD present):
 
 Same Launcher app-only flash as above. Wipe (v1) must stay **PASS**. Then:
 
-1. **EXT orientation (v2.5):** MINING/CLOCK/NETWORK/PRICE on the porkchop must read left-to-right **and** right-side-up. MADCTL stays boot-only `0x28` (`MV|BGR` — no MX, no MY, no MH, no ML). Software Y-flip in `ili9341Ext` (`extFlipY` + reverse row writes) fixes the 0x28 upside-down field result. Do **not** flip Y with MADCTL bits — `0xAC` was backwards+upside-down; `0x38` was upside-down + RTL + frozen.
-2. **Live motion (v2.5):** Must leave **frozen zeros**. EXT `blitLiveStock` every 1 Hz with live `mElapsed` (PR #12 `blitStockOnce` froze art on boot zeros; restore-compose with `0` poisoned KH/s). Goods-band dirty rects include KH/s / shares / `WIFI|CONN|HASH` + uptime. INT paints live `mElapsed` every monitor tick (not `mElapsed==0`). Pulse still bypasses `s_intDirty`. Software Y-flip is **rows only** (no X / column reverse).
+1. **EXT orientation (v2.6):** MINING/CLOCK/NETWORK/PRICE on the porkchop must read left-to-right **and** right-side-up. MADCTL stays boot-only `0x28` (`MV|BGR` — no MX, no MY, no MH, no ML). Software **X+Y** in `ili9341Ext` (`extFlipX` + `extFlipY` + reverse columns and rows on push) fixes 0x28 upside-down (v2.5) **and** the remaining L/R mirror. Do **not** flip X/Y with MADCTL bits — `0xAC` was backwards+upside-down; `0x38` was upside-down + RTL + frozen. MX is banned (re-broke Y).
+2. **Live motion (v2.6):** Must leave **frozen zeros**. EXT `blitLiveStock` every 1 Hz with live `mElapsed` (PR #12 `blitStockOnce` froze art on boot zeros; restore-compose with `0` poisoned KH/s). Stock V1 DigitalNumbers are the live values — **no** extra goods-band / `WIFI 0KH` overlay. INT paints live `mElapsed` every monitor tick (not `mElapsed==0`). `tDisplayV1PaintLivePulse` is a no-op (no off-chrome HUD).
 3. **Down key:** **Fn+`.`** moves MINING → CLOCK → NETWORK → PRICE. Bare `;` / `.` still next (v1.2). **Fn+`;`** prev. `p` / `,` / Backspace / G0 unchanged.
 4. **INT lag / live chrome:** After nav, INT updates within about one monitor tick (~100 ms). 1 Hz live `mElapsed` paint so KH/s / uptime / connecting are not stuck at 0. No per-tick extra `fillSprite` outside stock V1 `pushSprite`.
-5. **Stock chrome (v2.1b / v2.2b):** INT looks like stock single-screen NerdMiner (logo, clock, BLOCK TEMPLATES / BEST DIFFICULTY / 32BITS SHARES / VALID BLOCKS, KH/s, uptime, gauge, DigitalNumbers / `0xDEDB`). No `C_ORANGE` / custom yellow HUD. EXT composes the same V1 screens (live `mElapsed`) and scale-blits them, plus a `0xDEDB` goods band. Not identical clones.
+5. **Stock chrome (v2.1b / v2.2b / v2.6):** INT looks like stock single-screen NerdMiner (logo, clock, BLOCK TEMPLATES / BEST DIFFICULTY / 32BITS SHARES / VALID BLOCKS, KH/s, uptime, gauge, DigitalNumbers / `0xDEDB`). No `C_ORANGE` / custom yellow HUD. EXT composes the same V1 screens (live `mElapsed`) and scale-blits them, **centered, no goods-band overlay**. Not identical clones. No stray numbers below 320×240 or below INT chrome.
 
 If a wipe remains, note whether it is every second (redraw) or only around SD/boot (bus). Serial `>>> EXT miner|clock|global|price` marks each 1 Hz paint.
 
@@ -157,5 +158,5 @@ If a wipe remains, note whether it is every second (redraw) or only around SD/bo
 - **SD + EXT:** If EXT CS is left low, SD enumerates fail. Boot always idles GPIO5 HIGH; `loadConfigFile` / `initSDcard` quiesce EXT first.
 - **LoRa / Hydra on the Grove/hat pins:** Do not stack with the porkchop.
 - **Color order:** Cheap ILI9341 modules may swap R/B. Driver uses BGR MADCTL; swap in `ili9341Ext.cpp` if a panel looks inverted.
-- **EXT orientation (v2.5):** MADCTL is written **once at boot**: `MV|BGR` = `0x28` (no MX, no MY, no MH, no ML). Field: `e54ac1c` / `0x28` was L/R-good + sharp, only upside-down. `0xAC` FAIL (backwards + upside-down). `0x38` FAIL (upside-down + RTL + frozen). Software Y-flip (`EXT_TFT_SW_FLIP_Y`, default 1) on the write path. Do not rewrite MADCTL mid-run. Override `-DEXT_TFT_MADCTL=` for A/B.
+- **EXT orientation (v2.6):** MADCTL is written **once at boot**: `MV|BGR` = `0x28` (no MX, no MY, no MH, no ML). Field: `e54ac1c` / `0x28` was L/R-good + sharp, only upside-down. v2.5 SW Y-flip made it upright but **L/R mirrored**. `0xAC` FAIL (backwards + upside-down). `0x38` FAIL (upside-down + RTL + frozen). Software X+Y (`EXT_TFT_SW_FLIP_X` + `EXT_TFT_SW_FLIP_Y`, default 1) on the write path — mirror each row and reverse rows. Do not rewrite MADCTL mid-run. Do not set MX. Override `-DEXT_TFT_MADCTL=` for A/B.
 - **Keyboard / Launcher:** Dual env still compiles TCA8418 v1.2 and the app-only export. Stock env is the safe path if you only want PR #1 behavior.
