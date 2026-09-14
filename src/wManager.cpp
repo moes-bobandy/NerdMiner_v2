@@ -231,7 +231,9 @@ void init_WifiManager()
     //Set dark theme
     //wm.setClass("invert"); // dark theme
 
-    // Set config save notify callback
+    // Save/Connect: WM 2.0.17 often returns from startConfigPortal without
+    // _savewificallback. Pre-save fires in handleWifiSave before connect.
+    wm.setPreSaveConfigCallback(saveConfigCallback);
     wm.setSaveConfigCallback(saveConfigCallback);
     wm.setSaveParamsCallback(saveConfigCallback);
 
@@ -320,34 +322,74 @@ void init_WifiManager()
         nvMem.saveConfig(&Settings);
     };
 
-    // Contract v1.2: persist, clear sticky keys, arm STA-first (NVS+RTC+SPIFFS).
-    // Do NOT ESP.restart() after Save — that is boot splash initScreen (Connecting
-    // QR) then leftover keys / failed STA → setupModeScreen (WAITING CONFIG QR).
-    // Dirt: those are TWO different QR screens. After Save never paint initScreen.
-    // WL_CONNECTED → mining. Else quiet STA (status only); portal again only
-    // after a real timeout, still on WAITING CONFIG — no Connecting QR flash.
-    // /force_portal is wipe-only. Never arm it on connect fail.
-    auto tryStaFirst = [&](bool paintConnectingQr) -> bool {
-        mMonitor.NerdStatus = NM_Connecting;
-        if (paintConnectingQr) {
-            // Boot / first STA only. initScreen is a QR — banned after Save.
-            drawLoadingScreen();
-        }
+    // Contract v1.2 ARCH: kill infinite portal re-enter. WM Save/Connect often
+    // returns from startConfigPortal without shouldSaveConfig — the old
+    // infinite portal loop then immediately drawSetupScreen (WAITING CONFIG bounce).
+    // On portal exit: clear latch, arm /sta_first, leave softAP, Connecting/STA
+    // with enableConfigPortal(false). STA fail → one clear retry, then setup
+    // only if still fail. Do not ESP.restart(). /force_portal is wipe-only.
+    auto leaveSoftAp = [&]() {
+        wm.stopConfigPortal();
+        WiFi.softAPdisconnect(true);
         WiFi.mode(WIFI_STA);
+        wm.setEnableConfigPortal(false);
+    };
+
+    auto tryStaFirst = [&]() -> bool {
+        mMonitor.NerdStatus = NM_Connecting;
+        drawLoadingScreen();
+        leaveSoftAp();
         wm.setCaptivePortalEnable(true);
         wm.setConfigPortalBlocking(true);
         wm.setEnableConfigPortal(false);
+        wm.setConnectTimeout(40);
         return wm.autoConnect(apName, DEFAULT_WIFIPW);
     };
 
     auto commitPortalSave = [&]() {
-        Serial.println(F("Portal shouldSaveConfig — saving, no bounce restart"));
+        Serial.println(F("Portal save — latch clear, arm sta_first, leave AP, no bounce restart"));
         saveFromPortal();
 #ifdef M5_CARDPUTER_ADV
         cardputerKeyboardClearConfigLatch();
         cardputerKeyboardIgnoreForcePortal();
 #endif
         nvMem.armStaFirst();
+        leaveSoftAp();
+    };
+
+    // Connecting + STA + one retry. Setup QR is the caller's job only if this fails.
+    auto staWithOneRetry = [&]() -> bool {
+        if (WiFi.status() == WL_CONNECTED) {
+            mMonitor.NerdStatus = NM_Connecting;
+            leaveSoftAp();
+            return true;
+        }
+        if (tryStaFirst()) {
+            return true;
+        }
+        Serial.println(F("STA fail — one clear retry"));
+        return tryStaFirst();
+    };
+
+    auto afterPortalReturn = [&](bool portalConnected) -> bool {
+        const bool creds = wm.getWiFiSSID(true).length() > 0;
+        // WM Save/Connect often exits with shouldSaveConfig still false.
+        const bool treatAsSave = shouldSaveConfig || portalConnected ||
+                                 (WiFi.status() == WL_CONNECTED) || creds;
+        if (treatAsSave) {
+            commitPortalSave();
+        } else {
+#ifdef M5_CARDPUTER_ADV
+            cardputerKeyboardClearConfigLatch();
+            cardputerKeyboardIgnoreForcePortal();
+#endif
+            leaveSoftAp();
+        }
+        if (!staWithOneRetry()) {
+            Serial.println(F("STA timeout after save/retry — setup only if still fail"));
+            return false;
+        }
+        return true;
     };
 
     auto runConfigPortal = [&]() {
@@ -357,34 +399,22 @@ void init_WifiManager()
         wm.setConfigPortalBlocking(true);
         wm.setBreakAfterConfig(true);
         wm.setConfigPortalTimeout(0);
-        for (;;) {
-            shouldSaveConfig = false;
-            mMonitor.NerdStatus = NM_waitingConfig;
-            drawSetupScreen();
-            const bool portalConnected = wm.startConfigPortal(apName, DEFAULT_WIFIPW);
-            if (shouldSaveConfig) {
-                commitPortalSave();
-            }
-            if (portalConnected || (WiFi.status() == WL_CONNECTED)) {
-                Serial.println(F("Portal save — STA connected, skip both QRs, mine"));
-                mMonitor.NerdStatus = NM_Connecting;
-                WiFi.mode(WIFI_STA);
-                return;
-            }
-            if (shouldSaveConfig) {
-                Serial.println(F("Portal save — quiet STA (no initScreen QR), no instant bounce"));
-#ifdef M5_CARDPUTER_ADV
-                cardputerKeyboardIgnoreForcePortal();
-#endif
-                // paintConnectingQr=false: stay on setupModeScreen during STA.
-                if (tryStaFirst(false)) {
-                    return;
-                }
-                Serial.println(F("STA timeout after save — config portal again"));
-                continue;
-            }
-            Serial.println(F("Config portal ended without save — re-enter WAITING CONFIG"));
+        shouldSaveConfig = false;
+        mMonitor.NerdStatus = NM_waitingConfig;
+        drawSetupScreen();
+        const bool portalConnected = wm.startConfigPortal(apName, DEFAULT_WIFIPW);
+        if (afterPortalReturn(portalConnected)) {
+            return;
         }
+        // Real STA timeout + retry already elapsed. One more setup, not an infinite loop.
+        shouldSaveConfig = false;
+        mMonitor.NerdStatus = NM_waitingConfig;
+        drawSetupScreen();
+        const bool portalConnected2 = wm.startConfigPortal(apName, DEFAULT_WIFIPW);
+        if (afterPortalReturn(portalConnected2)) {
+            return;
+        }
+        Serial.println(F("Portal: still no STA after two sessions — no infinite re-enter"));
     };
 
     Serial.println("AllDone: ");
@@ -394,13 +424,11 @@ void init_WifiManager()
     }
     else
     {
-        // STA first: Connecting only. No setup QR until a real STA timeout.
-        if (!tryStaFirst(true))
+        // STA first: Connecting only. No setup QR until a real STA timeout
+        // plus one clear retry (sta_first must not drop straight into portal).
+        if (!staWithOneRetry())
         {
             Serial.println("Failed to connect to configured WIFI, and hit timeout");
-            if (shouldSaveConfig) {
-                commitPortalSave();
-            }
             runConfigPortal();
         }
     }
