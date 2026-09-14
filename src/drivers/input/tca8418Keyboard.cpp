@@ -146,6 +146,9 @@ static bool g0Held()
 
 static void latchConfigIfHeld()
 {
+    if (g_ignoreForcePortal) {
+        return;
+    }
     if (!g_portalLatchConsumed && g_heldConfigMask != 0) {
         g_wantsConfig = true;
     }
@@ -303,6 +306,16 @@ bool cardputerKeyboardBegin()
     g_fn = false;
     g_resetHeld = false;
 
+    // Peek BEFORE drainFifo. v1.1 peeked after dual EXT init, so a leftover
+    // Enter/C/W already latched g_wantsConfig. If SPIFFS /sta_first was lost
+    // (Launcher begin(true) format), that latch bounced back to WAITING CONFIG.
+    if (nvMem.peekStaFirst()) {
+        g_wantsConfig = false;
+        g_portalLatchConsumed = true;
+        g_ignoreForcePortal = true;
+        Serial.println(F("Cardputer KB: STA-first — skip Enter/C/W/G0 latch"));
+    }
+
     // Keep EXT SPI CS idle so the onboard SD (HSPI CS=12) is not contested.
     pinMode(EXT_TFT_CS, OUTPUT);
     digitalWrite(EXT_TFT_CS, HIGH);
@@ -315,7 +328,7 @@ bool cardputerKeyboardBegin()
     Wire.beginTransmission(TCA8418_I2C_ADDR);
     if (Wire.endTransmission() != 0) {
         Serial.println(F("Cardputer KB: TCA8418 not found at 0x34"));
-        if (g0Held()) {
+        if (!g_ignoreForcePortal && g0Held()) {
             g_wantsConfig = true;
             Serial.println(F("Cardputer KB: G0 held at boot — config portal"));
         }
@@ -328,7 +341,7 @@ bool cardputerKeyboardBegin()
         !writeReg(TCA8418_REG_KP_GPIO3, 0x00) ||
         !writeReg(TCA8418_REG_CFG, TCA8418_CFG_INT_CFG | TCA8418_CFG_KE_IEN)) {
         Serial.println(F("Cardputer KB: TCA8418 init write failed"));
-        if (g0Held()) {
+        if (!g_ignoreForcePortal && g0Held()) {
             g_wantsConfig = true;
             Serial.println(F("Cardputer KB: G0 held at boot — config portal"));
         }
@@ -343,7 +356,7 @@ bool cardputerKeyboardBegin()
     delay(30);
     drainFifoForHeldConfig();
 
-    if (g0Held()) {
+    if (!g_ignoreForcePortal && g0Held()) {
         g_wantsConfig = true;
         Serial.println(F("Cardputer KB: G0 held at boot — config portal"));
     }

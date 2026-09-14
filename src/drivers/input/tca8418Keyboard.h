@@ -42,7 +42,7 @@ bool cardputerKeyboardPollConfigHeld();
 /// Later splash-style polls stay physical-held only; connect-fail must not re-arm.
 void cardputerKeyboardClearConfigLatch();
 
-/// /sta_first: ignore Enter/C/W/G0 force-portal for the rest of this boot.
+/// STA-first (NVS/RTC/SPIFFS): ignore Enter/C/W/G0 force-portal this boot.
 void cardputerKeyboardIgnoreForcePortal();
 
 /// Poll FIFO and dispatch UI actions (next/prev screen, rotate, backlight, reset).

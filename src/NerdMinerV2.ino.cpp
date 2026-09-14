@@ -123,8 +123,9 @@ void setup()
   /******** PRINT INIT SCREEN *****/
   drawLoadingScreen();
 #ifdef M5_CARDPUTER_ADV
-  // Dual EXT init already ran. If /sta_first is armed (portal just saved),
-  // ignore Enter/C/W/G0 and keep the loading/Connecting splash.
+  // Dual EXT init already ran. Keyboard begin already peeked STA-first
+  // (NVS/RTC/SPIFFS) before drainFifo so leftover Enter cannot latch.
+  // If the latch is armed, ignore keys and keep the loading/Connecting splash.
   if (nvMem.peekStaFirst()) {
     cardputerKeyboardIgnoreForcePortal();
     delay(2 * SECOND_MS);

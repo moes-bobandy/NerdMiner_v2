@@ -197,16 +197,28 @@ void init_WifiManager()
     {
         //No config file on internal flash.
         // Boot-held portal / wipe flag must not be skipped by SD config.json.
-        // SD fallback still runs when the user is not forcing the portal.
-        if (!forceConfig && SDCrd.loadConfigFile(&Settings))
+        // STA-first after a portal save must not bounce to WAITING CONFIG just
+        // because SPIFFS was reformatted (Launcher begin(true)); WiFi creds
+        // live in NVS. SD fallback still runs when the user is not forcing
+        // the portal and is not in the STA-first window.
+        if (!forceConfig && !staFirst && SDCrd.loadConfigFile(&Settings))
         {
             //Config file on SD card.
             SDCrd.SD2nvMemory(&nvMem, &Settings); // reboot on success.          
         }
-        else
+        else if (!forceConfig && staFirst && SDCrd.loadConfigFile(&Settings))
+        {
+            // Use SD pool/wallet in RAM; do not SD2nvMemory-reboot (re-latches keys).
+            Serial.println(F("STA-first: using SD config in RAM, skip SPIFFS reboot"));
+        }
+        else if (!staFirst)
         {
             //No config file on SD card (or portal forced). Starting wifi config server.
             forceConfig = true;
+        }
+        else
+        {
+            Serial.println(F("STA-first: no SPIFFS/SD config — try STA anyway"));
         }
     };
     
@@ -308,19 +320,33 @@ void init_WifiManager()
         nvMem.saveConfig(&Settings);
     };
 
-    // Contract v1.1: on shouldSaveConfig, persist, clear sticky keys, arm
-    // /sta_first, restart. Next splash ignores Enter/C/W/G0 and tries STA.
+    // Contract v1.2: on shouldSaveConfig, persist, clear sticky keys, arm
+    // STA-first (NVS+RTC+SPIFFS). Do NOT ESP.restart() — v1.1 restart re-latched
+    // leftover Enter/C/W/G0 and SPIFFS /sta_first lost the race (dirt bounce).
+    // Connecting UI only; portal again only after a real STA timeout.
     // /force_portal is wipe-only. Never arm it on connect fail.
+    auto showConnecting = [&]() {
+        mMonitor.NerdStatus = NM_Connecting;
+        drawLoadingScreen();
+    };
+
     auto commitPortalSave = [&]() {
-        Serial.println(F("Portal shouldSaveConfig — saving"));
+        Serial.println(F("Portal shouldSaveConfig — saving, no bounce restart"));
         saveFromPortal();
 #ifdef M5_CARDPUTER_ADV
         cardputerKeyboardClearConfigLatch();
         cardputerKeyboardIgnoreForcePortal();
 #endif
         nvMem.armStaFirst();
-        delay(3 * SECOND_MS);
-        ESP.restart();
+    };
+
+    auto tryStaFirst = [&]() -> bool {
+        showConnecting();
+        WiFi.mode(WIFI_STA);
+        wm.setCaptivePortalEnable(true);
+        wm.setConfigPortalBlocking(true);
+        wm.setEnableConfigPortal(false);
+        return wm.autoConnect(apName, DEFAULT_WIFIPW);
     };
 
     auto runConfigPortal = [&]() {
@@ -330,13 +356,30 @@ void init_WifiManager()
         wm.setConfigPortalBlocking(true);
         wm.setBreakAfterConfig(true);
         wm.setConfigPortalTimeout(0);
-        mMonitor.NerdStatus = NM_waitingConfig;
         for (;;) {
             shouldSaveConfig = false;
+            mMonitor.NerdStatus = NM_waitingConfig;
             drawSetupScreen();
-            wm.startConfigPortal(apName, DEFAULT_WIFIPW);
+            const bool portalConnected = wm.startConfigPortal(apName, DEFAULT_WIFIPW);
             if (shouldSaveConfig) {
                 commitPortalSave();
+            }
+            if (portalConnected || (WiFi.status() == WL_CONNECTED)) {
+                Serial.println(F("Portal save — STA connected, skip config QR"));
+                showConnecting();
+                WiFi.mode(WIFI_STA);
+                return;
+            }
+            if (shouldSaveConfig) {
+                Serial.println(F("Portal save — STA-first Connecting (real timeout, no instant bounce)"));
+#ifdef M5_CARDPUTER_ADV
+                cardputerKeyboardIgnoreForcePortal();
+#endif
+                if (tryStaFirst()) {
+                    return;
+                }
+                Serial.println(F("STA timeout after save — config portal again"));
+                continue;
             }
             Serial.println(F("Config portal ended without save — re-enter WAITING CONFIG"));
         }
@@ -350,11 +393,7 @@ void init_WifiManager()
     else
     {
         // STA first: Connecting only. No setup QR until a real STA timeout.
-        mMonitor.NerdStatus = NM_Connecting;
-        wm.setCaptivePortalEnable(true);
-        wm.setConfigPortalBlocking(true);
-        wm.setEnableConfigPortal(false);
-        if (!wm.autoConnect(apName, DEFAULT_WIFIPW))
+        if (!tryStaFirst())
         {
             Serial.println("Failed to connect to configured WIFI, and hit timeout");
             if (shouldSaveConfig) {

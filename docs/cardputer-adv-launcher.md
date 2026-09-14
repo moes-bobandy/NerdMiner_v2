@@ -73,7 +73,7 @@ The script refuses any file that does not start with `0xE9`.
 
 Optional: Launcher **OTA** can install the same app-only URL if you host the `0xE9` file (GitHub release asset, etc.). Still do **not** publish the factory merge as the Launcher payload.
 
-First-boot Wi‑Fi / pool setup is the usual NerdMiner AP (`NerdMinerAP` / `MineYourCoins`), or an SD `config.json` (see main README). On Adv you can also **hold Enter, C, or W** while NerdMiner starts to force the config portal. **G0 (BOOT) held during the loading splash** (after the app is already running — not during power-on reset, which would enter download mode) also opens the portal. A 5s Backspace wipe clears Wi‑Fi and re-enters the portal on the next boot; SD `config.json` is still used as first-boot fallback when you are not forcing the portal.
+First-boot Wi‑Fi / pool setup is the usual NerdMiner AP (`NerdMinerAP` / `MineYourCoins`), or an SD `config.json` (see main README). On Adv you can also **hold Enter, C, or W** while NerdMiner starts to force the config portal. **G0 (BOOT) held during the loading splash** (after the app is already running — not during power-on reset, which would enter download mode) also opens the portal. After Save/Connect, leftover Enter must **not** bounce back to WAITING CONFIG (STA-first latch; Connecting UI; portal only after a real STA timeout). A 5s Backspace wipe clears Wi‑Fi and re-enters the portal on the next boot; SD `config.json` is still used as first-boot fallback when you are not forcing the portal.
 
 ## Keyboard UI (TCA8418)
 

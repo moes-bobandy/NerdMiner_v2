@@ -9,6 +9,9 @@
 #include "../devices/device.h"
 #include "storage.h"
 
+#include <Preferences.h>
+#include <esp_system.h>
+
 nvMemory::nvMemory() : Initialized_(false){};
 
 nvMemory::~nvMemory()
@@ -132,6 +135,84 @@ bool nvMemory::loadConfig(TSettings* Settings)
 
 #define FORCE_PORTAL_FILE "/force_portal"
 #define STA_FIRST_FILE "/sta_first"
+#define STA_FIRST_NVS_NS "nerdminer"
+#define STA_FIRST_NVS_KEY "sta_first"
+#define STA_FIRST_RTC_MAGIC 0x5A1F15A1u
+
+// RTC_NOINIT survives ESP.restart() (the leftover-key window). NVS survives
+// that plus power-cycle until consume. SPIFFS /sta_first is best-effort:
+// Launcher may fail SPIFFS.begin(false) and begin(true) formats the partition.
+static RTC_NOINIT_ATTR uint32_t s_staFirstRtc;
+
+static bool staFirstResetKeepsRtc()
+{
+    switch (esp_reset_reason()) {
+    case ESP_RST_SW:
+    case ESP_RST_PANIC:
+    case ESP_RST_INT_WDT:
+    case ESP_RST_TASK_WDT:
+    case ESP_RST_WDT:
+        return true;
+    default:
+        return false;
+    }
+}
+
+static bool staFirstRtcPeek()
+{
+    return staFirstResetKeepsRtc() && (s_staFirstRtc == STA_FIRST_RTC_MAGIC);
+}
+
+static void staFirstRtcArm()
+{
+    s_staFirstRtc = STA_FIRST_RTC_MAGIC;
+}
+
+static void staFirstRtcClear()
+{
+    s_staFirstRtc = 0;
+}
+
+static bool nvsPeekStaFirst()
+{
+    Preferences prefs;
+    if (!prefs.begin(STA_FIRST_NVS_NS, true)) {
+        return false;
+    }
+    const bool armed = prefs.getBool(STA_FIRST_NVS_KEY, false);
+    prefs.end();
+    return armed;
+}
+
+static bool nvsArmStaFirst()
+{
+    Preferences prefs;
+    if (!prefs.begin(STA_FIRST_NVS_NS, false)) {
+        Serial.println("NVS: Failed to arm sta-first flag");
+        return false;
+    }
+    const bool ok = prefs.putBool(STA_FIRST_NVS_KEY, true) > 0;
+    prefs.end();
+    if (ok) {
+        Serial.println("NVS: STA-first on next boot");
+    }
+    return ok;
+}
+
+static bool nvsConsumeStaFirst()
+{
+    Preferences prefs;
+    if (!prefs.begin(STA_FIRST_NVS_NS, false)) {
+        return false;
+    }
+    const bool armed = prefs.getBool(STA_FIRST_NVS_KEY, false);
+    if (armed) {
+        prefs.remove(STA_FIRST_NVS_KEY);
+        Serial.println("NVS: Consumed sta-first flag");
+    }
+    prefs.end();
+    return armed;
+}
 
 /// @brief Delete config file from SPIFFS
 /// @return true on successs
@@ -159,6 +240,7 @@ bool nvMemory::armForcePortal()
         return false;
     }
     f.print("1");
+    f.flush();
     f.close();
     Serial.println("SPIFS: Force portal on next boot");
     return true;
@@ -179,23 +261,38 @@ bool nvMemory::consumeForcePortal()
 
 bool nvMemory::armStaFirst()
 {
-    if (!init()) {
-        return false;
+    // NVS + RTC first: these survive a SPIFFS remount/format on the next boot.
+    staFirstRtcArm();
+    bool ok = nvsArmStaFirst();
+    if (init(true)) {
+        File f = SPIFFS.open(STA_FIRST_FILE, "w");
+        if (!f) {
+            Serial.println("SPIFS: Failed to arm sta-first flag");
+        } else {
+            f.print("1");
+            f.flush();
+            f.close();
+            Serial.println("SPIFS: STA-first on next boot");
+            ok = true;
+        }
     }
-    File f = SPIFFS.open(STA_FIRST_FILE, "w");
-    if (!f) {
-        Serial.println("SPIFS: Failed to arm sta-first flag");
-        return false;
-    }
-    f.print("1");
-    f.close();
-    Serial.println("SPIFS: STA-first on next boot");
+    Serial.println(ok ? "STA-first armed (NVS/RTC/SPIFFS)"
+                      : "STA-first: NVS/SPIFFS write failed; RTC latch still armed");
     return true;
 }
 
 bool nvMemory::peekStaFirst()
 {
-    if (!init()) {
+    if (staFirstRtcPeek()) {
+        Serial.println("STA-first peek: RTC");
+        return true;
+    }
+    if (nvsPeekStaFirst()) {
+        Serial.println("STA-first peek: NVS");
+        return true;
+    }
+    // Do not format SPIFFS just to look for a flag — begin(true) would wipe it.
+    if (!init(false)) {
         return false;
     }
     return SPIFFS.exists(STA_FIRST_FILE);
@@ -203,26 +300,33 @@ bool nvMemory::peekStaFirst()
 
 bool nvMemory::consumeStaFirst()
 {
-    if (!init()) {
-        return false;
+    const bool rtc = staFirstRtcPeek() || (s_staFirstRtc == STA_FIRST_RTC_MAGIC);
+    staFirstRtcClear();
+    const bool nvs = nvsConsumeStaFirst();
+    bool spiffs = false;
+    if (init(false) && SPIFFS.exists(STA_FIRST_FILE)) {
+        SPIFFS.remove(STA_FIRST_FILE);
+        Serial.println("SPIFS: Consumed sta-first flag");
+        spiffs = true;
     }
-    if (!SPIFFS.exists(STA_FIRST_FILE)) {
-        return false;
-    }
-    SPIFFS.remove(STA_FIRST_FILE);
-    Serial.println("SPIFS: Consumed sta-first flag");
-    return true;
+    return rtc || nvs || spiffs;
 }
 
 /// @brief Prepare and mount SPIFFS
+/// @param formatIfNeeded If mount fails, format (wipes /sta_first and config).
 /// @return true on success
-bool nvMemory::init()
+bool nvMemory::init(bool formatIfNeeded)
 {
     if (!Initialized_)
     {
         Serial.println("SPIFS: Mounting File System...");
-        // May need to make it begin(true) first time you are using SPIFFS
-        Initialized_ = SPIFFS.begin(false) || SPIFFS.begin(true);
+        Initialized_ = SPIFFS.begin(false);
+        if (!Initialized_ && formatIfNeeded) {
+            // First-boot / Launcher LittleFS leftover. Formatting drops flags
+            // that were only on SPIFFS — NVS/RTC sta-first must still win.
+            Serial.println("SPIFS: Mount failed, formatting");
+            Initialized_ = SPIFFS.begin(true);
+        }
         Initialized_ ? Serial.println("SPIFS: Mounted") : Serial.println("SPIFS: Mounting failed.");
     }
     else
@@ -244,7 +348,7 @@ bool nvMemory::consumeForcePortal() { return false; }
 bool nvMemory::armStaFirst() { return false; }
 bool nvMemory::peekStaFirst() { return false; }
 bool nvMemory::consumeStaFirst() { return false; }
-bool nvMemory::init() { return false; }
+bool nvMemory::init(bool formatIfNeeded) { (void)formatIfNeeded; return false; }
 
 
 #endif //NVMEM_TYPE
