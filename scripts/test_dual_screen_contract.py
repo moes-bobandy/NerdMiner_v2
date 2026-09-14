@@ -58,6 +58,7 @@ class DualScreenContractTests(unittest.TestCase):
         self.assertIn("nerd_mining()", disp)
         self.assertIn("nerd_nav()", disp)
         self.assertIn("nerd_draw_int_nav_hud", disp)
+        self.assertIn("nerd_draw_int_live_pulse", disp)
 
     def test_sd_quiesces_ext_only(self) -> None:
         sd = read("src/drivers/storage/SDCard.cpp")
@@ -150,11 +151,13 @@ class DualScreenContractTests(unittest.TestCase):
         self.assertNotIn("while (count--)", low)
         self.assertIn("ili9341ExtBeginFrame", low)
         self.assertIn("while (s_frame > 0)", low)
-        # v2.2: boot-only MV|BGR = 0x28 (no MX, no MY). Field FAIL: 0xE8 still mirrored.
+        # v2.5: boot-only MV|BGR = 0x28 (no MX/MY/MH/ML). SW Y-flip for upside-down.
         self.assertIn(
             "#define EXT_TFT_MADCTL (ILI9341_MADCTL_MV | ILI9341_MADCTL_BGR)",
             low,
         )
+        self.assertIn("#define EXT_TFT_SW_FLIP_Y 1", low)
+        self.assertIn("extFlipY", low)
         self.assertEqual(low.count("writeCommand(ILI9341_MADCTL)"), 1)
         self.assertNotIn(
             "ILI9341_MADCTL_MX | ILI9341_MADCTL_MY | ILI9341_MADCTL_MV | ILI9341_MADCTL_BGR",
@@ -168,6 +171,11 @@ class DualScreenContractTests(unittest.TestCase):
             "#define EXT_TFT_MADCTL (ILI9341_MADCTL_MY | ILI9341_MADCTL_MV | ILI9341_MADCTL_BGR)",
             low,
         )
+        self.assertNotIn(
+            "#define EXT_TFT_MADCTL (ILI9341_MADCTL_MV | ILI9341_MADCTL_ML | ILI9341_MADCTL_BGR)",
+            low,
+        )
+        self.assertNotIn("static void blitStockOnce", driver)
         dual = read("src/drivers/displays/nerdMinerDual.cpp")
         self.assertIn("GRAM is retained", dual)
         self.assertIn("nerd_ext_begin_frame", dual)
@@ -189,6 +197,8 @@ class DualScreenContractTests(unittest.TestCase):
         self.assertIn("MinerScreen", v1)
         self.assertIn("minerClockScreen", v1.split("tDisplayV1StockFrame")[1].split("CyclicScreenFunction")[0])
         self.assertIn("s_intDirty", dual)
+        self.assertIn("nerd_draw_int_live_pulse", dual)
+        self.assertIn("tDisplayV1PaintLivePulse", dual)
         self.assertNotIn("NAV  INT ST7789", dual)
         self.assertIn("ili9341ExtPushImageScaled", low)
         disp = read("src/drivers/displays/display.cpp")
@@ -219,8 +229,11 @@ class DualScreenContractTests(unittest.TestCase):
         self.assertIn("0xE8", docs)
         self.assertIn("0xA8", docs)
         self.assertIn("0x68", docs)
+        self.assertIn("0x38", docs)
         self.assertIn("MX|MY|MV|BGR", docs)
+        self.assertIn("SW_FLIP_Y", docs)
         self.assertIn("BLOCK TEMPLATES", docs)
+        self.assertIn("v2.5", docs)
         self.assertIn("v2.2", docs)
         self.assertIn("v2.2b", docs)
         self.assertIn("v2.1b", docs)

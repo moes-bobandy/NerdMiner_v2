@@ -106,4 +106,13 @@ void nerd_draw_int_nav_hud(int screenIndex, unsigned long mElapsed)
     s_intDirty = false;
 }
 
+void nerd_draw_int_live_pulse(unsigned long mElapsed)
+{
+    if (!g_ext) {
+        return;
+    }
+    // Bypasses s_intDirty — connecting/hash activity must move while mining.
+    tDisplayV1PaintLivePulse(mElapsed);
+}
+
 #endif // NERDMINER_DUAL_SCREEN

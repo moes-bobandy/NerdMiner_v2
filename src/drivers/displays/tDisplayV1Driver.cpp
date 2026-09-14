@@ -2,6 +2,10 @@
 
 #ifdef V1_DISPLAY
 
+#ifdef NERDMINER_DUAL_SCREEN
+#include <WiFi.h>
+#include <stdio.h>
+#endif
 #include <TFT_eSPI.h>
 #include "media/images_240_135.h"
 #include "media/myFonts.h"
@@ -332,6 +336,33 @@ const uint16_t *tDisplayV1SpriteBits(uint16_t *w, uint16_t *h)
     *h = HEIGHT;
   }
   return (const uint16_t *)background.getPointer();
+}
+
+void tDisplayV1PaintLivePulse(unsigned long mElapsed)
+{
+  // Tiny overlay only — do not fillSprite / full V1 goods. Do not call
+  // getCurrentHashRate (mutates the averager; mElapsed==0 is divide-by-zero).
+  extern uint32_t elapsedKHs;
+  extern uint64_t upTime;
+
+  (void)mElapsed;
+  const char *st;
+  if (WiFi.status() != WL_CONNECTED) {
+    st = "WIFI";
+  } else if (elapsedKHs == 0) {
+    st = "CONN";
+  } else {
+    st = "HASH";
+  }
+
+  char buf[28];
+  snprintf(buf, sizeof(buf), "%s %luKH %lus", st, (unsigned long)elapsedKHs,
+           (unsigned long)upTime);
+
+  tft.setTextDatum(TL_DATUM);
+  tft.setTextColor(0xDEDB, TFT_BLACK);
+  tft.fillRect(0, 126, 140, 9, TFT_BLACK);
+  tft.drawString(buf, 2, 126, 1);
 }
 #endif
 

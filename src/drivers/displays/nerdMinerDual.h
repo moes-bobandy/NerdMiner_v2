@@ -26,9 +26,12 @@ void tDisplayV1StockFrame(int screenIndex, const uint16_t **bits, uint16_t *w, u
 // pushToInt=false leaves ST7789 unchanged — EXT scale-blits the buffer.
 void tDisplayV1ComposeCyclic(int screenIndex, unsigned long mElapsed, bool pushToInt);
 const uint16_t *tDisplayV1SpriteBits(uint16_t *w, uint16_t *h);
+// Tiny 1 Hz INT pulse (WIFI/CONN/HASH + uptime). Not a full V1 goods paint.
+void tDisplayV1PaintLivePulse(unsigned long mElapsed);
 
 void nerd_dual_init();
 void nerd_draw_int_nav_hud(int screenIndex, unsigned long mElapsed);
+void nerd_draw_int_live_pulse(unsigned long mElapsed);
 // Keyboard / G0 mark dirty; monitor animateCurrentScreen paints INT within ~100ms
 // so the cyclic menu does not wait on the 1 Hz EXT mining refresh.
 void nerd_mark_int_nav_dirty();

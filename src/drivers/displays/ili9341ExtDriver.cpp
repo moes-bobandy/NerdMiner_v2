@@ -10,6 +10,8 @@
 
 #include <string.h>
 
+extern uint64_t upTime;
+
 // Stock V1 palette only (tDisplayV1 / DigitalNumbers / 0xDEDB). Yellow custom HUD banned.
 #define C_BG      0x0000
 #define C_CREAM   0xDEDB
@@ -87,6 +89,7 @@ static void enterExtScreen(int id)
 
 static void blitLiveStock(int screenIndex, unsigned long mElapsed)
 {
+    // Every 1 Hz monitor tick — not index-only. PR #12 blitStockOnce froze EXT art.
     // Full stock V1 frame (art + DigitalNumbers / 0xDEDB), then restore INT sprite.
     tDisplayV1ComposeCyclic(screenIndex, mElapsed, false);
     uint16_t sw = 0, sh = 0;
@@ -126,6 +129,13 @@ static void dirtyText(char *slot, size_t cap, const char *text,
     ili9341ExtDrawText(x, y, buf, fg, bg, scale);
 }
 
+static void dirtyUptimeTick(int16_t x, int16_t y)
+{
+    char tick[16];
+    snprintf(tick, sizeof(tick), "%lus", (unsigned long)upTime);
+    dirtyText(s_uptime, sizeof(s_uptime), tick, x, y, C_CREAM, C_BG, 1, 8);
+}
+
 static void extMinerScreen(unsigned long mElapsed)
 {
     mining_data data = getMiningData(mElapsed);
@@ -139,8 +149,10 @@ static void extMinerScreen(unsigned long mElapsed)
         drawGoodsBand();
         ili9341ExtDrawText(8, (int16_t)(s_artH + 4), "BLOCK TEMPLATES", C_MUTED, C_BG, 1);
         ili9341ExtDrawText(120, (int16_t)(s_artH + 4), "BEST DIFFICULTY", C_MUTED, C_BG, 1);
+        ili9341ExtDrawText(240, (int16_t)(s_artH + 4), "KH/s", C_MUTED, C_BG, 1);
         ili9341ExtDrawText(8, (int16_t)(s_artH + 30), "32BITS SHARES", C_MUTED, C_BG, 1);
         ili9341ExtDrawText(160, (int16_t)(s_artH + 30), "VALID BLOCKS", C_MUTED, C_BG, 1);
+        ili9341ExtDrawText(240, (int16_t)(s_artH + 30), "UPTIME", C_MUTED, C_BG, 1);
         s_chrome = true;
     }
 
@@ -148,12 +160,14 @@ static void extMinerScreen(unsigned long mElapsed)
               8, (int16_t)(s_artH + 14), C_CREAM, C_BG, 1, 8);
     dirtyText(s_best, sizeof(s_best), data.bestDiff.c_str(),
               120, (int16_t)(s_artH + 14), C_CREAM, C_BG, 1, 8);
+    dirtyText(s_khashes, sizeof(s_khashes), data.currentHashRate.c_str(),
+              240, (int16_t)(s_artH + 14), C_CREAM, C_BG, 1, 8);
     dirtyText(s_shares, sizeof(s_shares), data.completedShares.c_str(),
               8, (int16_t)(s_artH + 40), C_CREAM, C_BG, 1, 8);
     dirtyText(s_valids, sizeof(s_valids), data.valids.c_str(),
               160, (int16_t)(s_artH + 40), C_CREAM, C_BG, 1, 6);
-    dirtyText(s_khashes, sizeof(s_khashes), data.totalKHashes.c_str(),
-              240, (int16_t)(s_artH + 14), C_CREAM, C_BG, 1, 8);
+    dirtyText(s_uptime, sizeof(s_uptime), data.timeMining.c_str(),
+              240, (int16_t)(s_artH + 40), C_CREAM, C_BG, 1, 10);
 }
 
 static void extClockScreen(unsigned long mElapsed)
@@ -174,6 +188,9 @@ static void extClockScreen(unsigned long mElapsed)
               8, (int16_t)(s_artH + 20), C_CREAM, C_BG, 1, 8);
     dirtyText(s_block, sizeof(s_block), data.blockHeight.c_str(),
               160, (int16_t)(s_artH + 20), C_CREAM, C_BG, 1, 8);
+    dirtyText(s_clock, sizeof(s_clock), data.currentTime.c_str(),
+              240, (int16_t)(s_artH + 20), C_CREAM, C_BG, 1, 8);
+    dirtyUptimeTick(240, (int16_t)(s_artH + 32));
 }
 
 static void extGlobalScreen(unsigned long mElapsed)
@@ -194,6 +211,7 @@ static void extGlobalScreen(unsigned long mElapsed)
               8, (int16_t)(s_artH + 16), C_CREAM, C_BG, 1, 10);
     dirtyText(s_diff, sizeof(s_diff), data.netwrokDifficulty.c_str(),
               160, (int16_t)(s_artH + 16), C_CREAM, C_BG, 1, 10);
+    dirtyUptimeTick(240, (int16_t)(s_artH + 16));
 
     const int pct = (int)data.progressPercent;
     if (pct != s_pct || takeField(s_remain, sizeof(s_remain), data.remainingBlocks.c_str())) {
@@ -225,6 +243,7 @@ static void extPriceScreen(unsigned long mElapsed)
               8, (int16_t)(s_artH + 20), C_CREAM, C_BG, 1, 8);
     dirtyText(s_shares, sizeof(s_shares), data.completedShares.c_str(),
               160, (int16_t)(s_artH + 20), C_CREAM, C_BG, 1, 8);
+    dirtyUptimeTick(240, (int16_t)(s_artH + 20));
 }
 
 static void extInit(void)

@@ -40,15 +40,32 @@
 #define ILI9341_MADCTL_MY  0x80
 #define ILI9341_MADCTL_MX  0x40
 #define ILI9341_MADCTL_MV  0x20
+#define ILI9341_MADCTL_ML  0x10
 #define ILI9341_MADCTL_BGR 0x08
+#define ILI9341_MADCTL_MH  0x04
 
-// Contract v2.2: boot-only MADCTL MV|BGR = 0x28 (no MX, no MY).
-// Field FAIL: EXT still mirrored/reversed on tip 976c96a with boot 0xE8.
+// Contract v2.5: boot-only MADCTL MV|BGR = 0x28 (no MX, no MY, no MH, no ML).
+// Field: 0x28 L/R-good + sharp, ONLY upside-down. 0xAC / 0x38 traded L/R vs Y.
 // Keep BGR. Write once in sendInit — do not rewrite MADCTL mid-run.
-// A/B override: -DEXT_TFT_MADCTL=  (rollbacks: 0xE8, 0xA8, 0x68).
+// Fix Y in software (extFlipY + reverse row writes). Do NOT set MY/MH/ML.
+// A/B override: -DEXT_TFT_MADCTL=  (rollbacks: 0xE8, 0xA8, 0x68, 0xAC, 0x38).
 #ifndef EXT_TFT_MADCTL
 #define EXT_TFT_MADCTL (ILI9341_MADCTL_MV | ILI9341_MADCTL_BGR)
 #endif
+
+#ifndef EXT_TFT_SW_FLIP_Y
+#define EXT_TFT_SW_FLIP_Y 1
+#endif
+
+static inline int16_t extFlipY(int16_t y, int16_t h)
+{
+#if EXT_TFT_SW_FLIP_Y
+    return (int16_t)(EXT_TFT_HEIGHT - y - h);
+#else
+    (void)h;
+    return y;
+#endif
+}
 
 #ifndef EXT_TFT_SPI_HZ
 #define EXT_TFT_SPI_HZ 20000000
@@ -203,6 +220,10 @@ static void writeData(uint8_t data)
 
 static void setAddrWindow(int16_t x, int16_t y, int16_t w, int16_t h)
 {
+    // Logical compose space stays 320x240. Flip Y here so FillRect / text /
+    // blit share one transform. Callers still pass unflipped y; row emitters
+    // that write top-to-bottom must reverse source rows when SW_FLIP_Y=1.
+    y = extFlipY(y, h);
     const int16_t x1 = (int16_t)(x + w - 1);
     const int16_t y1 = (int16_t)(y + h - 1);
     writeCommand(ILI9341_CASET);
@@ -438,7 +459,8 @@ bool ili9341ExtBegin()
     }
     g_ready = true;
 #endif
-    Serial.println(F("EXT ILI9341: 320x240 mining surface ready (HSPI)"));
+    Serial.printf("EXT ILI9341: 320x240 ready MADCTL=0x%02X SW_FLIP_Y=%d (HSPI)\n",
+                  (unsigned)(EXT_TFT_MADCTL), (int)EXT_TFT_SW_FLIP_Y);
     return g_ready;
 }
 
@@ -479,7 +501,6 @@ static void emitRgb565Swapped(const uint16_t *src, uint32_t count)
 {
     uint8_t buf[128];
     uint32_t i = 0;
-    digitalWrite(EXT_TFT_CS, LOW);
     while (i < count) {
         uint32_t n = count - i;
         if (n > (sizeof(buf) / 2)) {
@@ -494,7 +515,6 @@ static void emitRgb565Swapped(const uint16_t *src, uint32_t count)
         extSpi.writeBytes(buf, n * 2);
         i += n;
     }
-    digitalWrite(EXT_TFT_CS, HIGH);
 }
 
 void ili9341ExtPushImage(int16_t x, int16_t y, int16_t w, int16_t h, const uint16_t *data)
@@ -504,7 +524,15 @@ void ili9341ExtPushImage(int16_t x, int16_t y, int16_t w, int16_t h, const uint1
     }
     beginTxn();
     setAddrWindow(x, y, w, h);
+    digitalWrite(EXT_TFT_CS, LOW);
+#if EXT_TFT_SW_FLIP_Y
+    for (int16_t row = (int16_t)(h - 1); row >= 0; --row) {
+        emitRgb565Swapped(data + (int32_t)row * w, (uint32_t)w);
+    }
+#else
     emitRgb565Swapped(data, (uint32_t)w * (uint32_t)h);
+#endif
+    digitalWrite(EXT_TFT_CS, HIGH);
     endTxn();
 }
 
@@ -519,7 +547,14 @@ void ili9341ExtPushImageScaled(int16_t x, int16_t y, int16_t dw, int16_t dh,
     digitalWrite(EXT_TFT_CS, LOW);
     uint8_t buf[160];
     uint32_t bp = 0;
-    for (int16_t dy = 0; dy < dh; ++dy) {
+    // SW Y-flip: setAddrWindow remapped the dest; emit source bottom→top
+    // so row 0 of the sprite lands at the physical top of that window.
+#if EXT_TFT_SW_FLIP_Y
+    for (int16_t dy = (int16_t)(dh - 1); dy >= 0; --dy)
+#else
+    for (int16_t dy = 0; dy < dh; ++dy)
+#endif
+    {
         const int16_t sy = (int16_t)((int32_t)dy * sh / dh);
         const uint16_t *row = data + (int32_t)sy * sw;
         for (int16_t dx = 0; dx < dw; ++dx) {
@@ -595,7 +630,12 @@ int16_t ili9341ExtDrawChar(int16_t x, int16_t y, char c, uint16_t fg, uint16_t b
     beginTxn();
     setAddrWindow(x, y, gw, gh);
     digitalWrite(EXT_TFT_CS, LOW);
-    for (int row = 0; row < 8; ++row) {
+#if EXT_TFT_SW_FLIP_Y
+    for (int row = 7; row >= 0; --row)
+#else
+    for (int row = 0; row < 8; ++row)
+#endif
+    {
         uint32_t p = 0;
         for (int col = 0; col < 6; ++col) {
             uint16_t color = bg;
