@@ -373,6 +373,9 @@ class DualScreenContractTests(unittest.TestCase):
         self.assertIn("No setup QR until a real STA timeout", wm)
         self.assertIn("no bounce restart", wm)
         self.assertIn("no instant bounce", wm)
+        self.assertIn("paintConnectingQr", wm)
+        self.assertIn("banned after Save", wm)
+        self.assertIn("skip both QRs", wm)
 
         # Keyboard begin peeks STA-first BEFORE drainFifo / G0 latch.
         begin = kb.split("bool cardputerKeyboardBegin()")[1].split("bool cardputerKeyboardAvailable()")[0]
@@ -389,28 +392,35 @@ class DualScreenContractTests(unittest.TestCase):
         init_fn = wm.split("void init_WifiManager()")[1]
         self.assertNotIn("armForcePortal", init_fn)
         self.assertIn("armStaFirst", init_fn)
-        commit = init_fn.split("auto commitPortalSave")[1].split("auto tryStaFirst")[0]
+        commit = init_fn.split("auto commitPortalSave")[1].split("auto runConfigPortal")[0]
         self.assertIn("armStaFirst", commit)
         self.assertIn("cardputerKeyboardClearConfigLatch", commit)
         self.assertNotIn("ESP.restart()", commit)
         self.assertNotIn("armForcePortal", commit)
+        self.assertNotIn("drawLoadingScreen()", commit)
 
         sta_path = init_fn.split("STA first:")[1].split("//Conectado a la red Wifi")[0]
-        self.assertIn("tryStaFirst", sta_path)
+        self.assertIn("tryStaFirst(true)", sta_path)
         self.assertIn("runConfigPortal", sta_path)
         self.assertLess(sta_path.find("tryStaFirst"), sta_path.find("runConfigPortal"))
 
         portal_loop = init_fn.split("auto runConfigPortal")[1].split("Serial.println(\"AllDone:")[0]
         self.assertIn("drawSetupScreen()", portal_loop)
-        self.assertIn("showConnecting()", portal_loop)
-        self.assertIn("tryStaFirst", portal_loop)
+        self.assertNotIn("drawLoadingScreen()", portal_loop)
+        self.assertNotIn("showConnecting", portal_loop)
+        self.assertIn("tryStaFirst(false)", portal_loop)
         self.assertIn("WL_CONNECTED", portal_loop)
-        show_connecting = init_fn.split("auto showConnecting")[1].split("auto commitPortalSave")[0]
-        self.assertIn("drawLoadingScreen()", show_connecting)
-        self.assertIn("NM_Connecting", show_connecting)
-        # After save, Connecting is shown before any re-entry to the config QR.
+        self.assertIn("skip both QRs", portal_loop)
+        # After save, quiet STA (no initScreen QR) before any re-entry to the config QR.
         save_branch = portal_loop.split("if (shouldSaveConfig)")[2]
-        self.assertLess(save_branch.find("tryStaFirst"), save_branch.find("STA timeout after save"))
+        self.assertIn("tryStaFirst(false)", save_branch)
+        self.assertLess(save_branch.find("tryStaFirst(false)"), save_branch.find("STA timeout after save"))
+        self.assertNotIn("drawLoadingScreen()", save_branch)
+
+        try_sta = init_fn.split("auto tryStaFirst")[1].split("auto commitPortalSave")[0]
+        self.assertIn("drawLoadingScreen()", try_sta)
+        self.assertIn("paintConnectingQr", try_sta)
+        self.assertLess(try_sta.find("if (paintConnectingQr)"), try_sta.find("drawLoadingScreen()"))
 
         # Missing SPIFFS config must not force portal during STA-first.
         self.assertIn("else if (!staFirst)", init_fn)
@@ -446,15 +456,17 @@ class DualScreenContractTests(unittest.TestCase):
         self.assertEqual(decide(True, True, True), "portal")  # wipe wins
 
         def after_save(wifi_connected, sta_ok_after_timeout):
+            # Dirt: must not paint initScreen (Connecting QR) after Save.
+            paint_init_screen = False
             if wifi_connected:
-                return "mining"
+                return "mining", paint_init_screen
             if sta_ok_after_timeout:
-                return "mining"
-            return "portal_after_timeout"
+                return "mining", paint_init_screen
+            return "portal_after_timeout", paint_init_screen
 
-        self.assertEqual(after_save(True, False), "mining")
-        self.assertEqual(after_save(False, True), "mining")
-        self.assertEqual(after_save(False, False), "portal_after_timeout")
+        self.assertEqual(after_save(True, False), ("mining", False))
+        self.assertEqual(after_save(False, True), ("mining", False))
+        self.assertEqual(after_save(False, False), ("portal_after_timeout", False))
 
         def keyboard_begin_latch(sta_first, key_held):
             if sta_first:
@@ -469,8 +481,10 @@ class DualScreenContractTests(unittest.TestCase):
         self.assertIn("/sta_first", docs)
         self.assertIn("NVS + RTC", docs)
         self.assertIn("Do not `ESP.restart()`", docs)
+        self.assertIn("do not paint `initScreen`", docs)
         self.assertIn("/force_portal", docs)
         self.assertIn("v1.2", docs)
+        self.assertIn("Connecting-to-Wifi QR", docs)
 
     def test_orientation_locks_untouched(self) -> None:
         low = read("src/drivers/displays/ili9341Ext.cpp")

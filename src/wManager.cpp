@@ -320,14 +320,24 @@ void init_WifiManager()
         nvMem.saveConfig(&Settings);
     };
 
-    // Contract v1.2: on shouldSaveConfig, persist, clear sticky keys, arm
-    // STA-first (NVS+RTC+SPIFFS). Do NOT ESP.restart() — v1.1 restart re-latched
-    // leftover Enter/C/W/G0 and SPIFFS /sta_first lost the race (dirt bounce).
-    // Connecting UI only; portal again only after a real STA timeout.
+    // Contract v1.2: persist, clear sticky keys, arm STA-first (NVS+RTC+SPIFFS).
+    // Do NOT ESP.restart() after Save — that is boot splash initScreen (Connecting
+    // QR) then leftover keys / failed STA → setupModeScreen (WAITING CONFIG QR).
+    // Dirt: those are TWO different QR screens. After Save never paint initScreen.
+    // WL_CONNECTED → mining. Else quiet STA (status only); portal again only
+    // after a real timeout, still on WAITING CONFIG — no Connecting QR flash.
     // /force_portal is wipe-only. Never arm it on connect fail.
-    auto showConnecting = [&]() {
+    auto tryStaFirst = [&](bool paintConnectingQr) -> bool {
         mMonitor.NerdStatus = NM_Connecting;
-        drawLoadingScreen();
+        if (paintConnectingQr) {
+            // Boot / first STA only. initScreen is a QR — banned after Save.
+            drawLoadingScreen();
+        }
+        WiFi.mode(WIFI_STA);
+        wm.setCaptivePortalEnable(true);
+        wm.setConfigPortalBlocking(true);
+        wm.setEnableConfigPortal(false);
+        return wm.autoConnect(apName, DEFAULT_WIFIPW);
     };
 
     auto commitPortalSave = [&]() {
@@ -338,15 +348,6 @@ void init_WifiManager()
         cardputerKeyboardIgnoreForcePortal();
 #endif
         nvMem.armStaFirst();
-    };
-
-    auto tryStaFirst = [&]() -> bool {
-        showConnecting();
-        WiFi.mode(WIFI_STA);
-        wm.setCaptivePortalEnable(true);
-        wm.setConfigPortalBlocking(true);
-        wm.setEnableConfigPortal(false);
-        return wm.autoConnect(apName, DEFAULT_WIFIPW);
     };
 
     auto runConfigPortal = [&]() {
@@ -365,17 +366,18 @@ void init_WifiManager()
                 commitPortalSave();
             }
             if (portalConnected || (WiFi.status() == WL_CONNECTED)) {
-                Serial.println(F("Portal save — STA connected, skip config QR"));
-                showConnecting();
+                Serial.println(F("Portal save — STA connected, skip both QRs, mine"));
+                mMonitor.NerdStatus = NM_Connecting;
                 WiFi.mode(WIFI_STA);
                 return;
             }
             if (shouldSaveConfig) {
-                Serial.println(F("Portal save — STA-first Connecting (real timeout, no instant bounce)"));
+                Serial.println(F("Portal save — quiet STA (no initScreen QR), no instant bounce"));
 #ifdef M5_CARDPUTER_ADV
                 cardputerKeyboardIgnoreForcePortal();
 #endif
-                if (tryStaFirst()) {
+                // paintConnectingQr=false: stay on setupModeScreen during STA.
+                if (tryStaFirst(false)) {
                     return;
                 }
                 Serial.println(F("STA timeout after save — config portal again"));
@@ -393,7 +395,7 @@ void init_WifiManager()
     else
     {
         // STA first: Connecting only. No setup QR until a real STA timeout.
-        if (!tryStaFirst())
+        if (!tryStaFirst(true))
         {
             Serial.println("Failed to connect to configured WIFI, and hit timeout");
             if (shouldSaveConfig) {
