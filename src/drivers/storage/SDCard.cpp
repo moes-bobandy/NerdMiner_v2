@@ -7,6 +7,10 @@
 #include "../devices/device.h"
 #include  "SDCard.h"
 
+#ifdef NERDMINER_DUAL_SCREEN
+#include "../displays/nerdMinerDual.h"
+#endif
+
 #if defined (BUILD_SDMMC_1) || defined(BUILD_SDMMC_4)
 #include <SD_MMC.h>
 #elif defined (BUILD_SDSPI)
@@ -45,8 +49,15 @@ SDCard::~SDCard()
 #ifdef BUILD_SDSPI
     if(newInstance_) 
     {
+#ifdef NERDMINER_DUAL_SCREEN
+        // Leave HSPI up for the EXT ILI9341. Only the SD device is released.
+        nerd_quiesce_ext();
+        pinMode(SDSPI_CS, OUTPUT);
+        digitalWrite(SDSPI_CS, HIGH);
+#else
         ispi_->end();
         delete ispi_;
+#endif
     }
 #endif // BUILD_SDSPI
     Serial.println("SDCard: Unmounted");  
@@ -64,8 +75,14 @@ void SDCard::terminate()
 {
     iSD_->end();
 #ifdef BUILD_SDSPI
-    ispi_->end(); 
-#endif   
+#ifdef NERDMINER_DUAL_SCREEN
+    nerd_quiesce_ext();
+    pinMode(SDSPI_CS, OUTPUT);
+    digitalWrite(SDSPI_CS, HIGH);
+#else
+    ispi_->end();
+#endif
+#endif
 }
 
 /// @brief Transfer settings from config file on a SD card to the device.
@@ -90,6 +107,9 @@ bool SDCard::loadConfigFile(TSettings* Settings)
     // Load existing configuration file
     // Read configuration from FS json
 
+#ifdef NERDMINER_DUAL_SCREEN
+    nerd_quiesce_ext();
+#endif
     if (cardAvailable())
     {
         if (iSD_->exists(JSON_CONFIG_FILE))
@@ -185,6 +205,9 @@ bool SDCard::initSDcard()
 {
     if (!cardAvailable()) 
     {
+#ifdef NERDMINER_DUAL_SCREEN
+        nerd_quiesce_ext();
+#endif
         Serial.println("SDCard: init SD card interface.");
 #if defined (BUILD_SDMMC_4)
         iSD_->setPins(SDMMC_CLK, SDMMC_CMD, SDMMC_D0, SDMMC_D1, SDMMC_D2, SDMMC_D3);

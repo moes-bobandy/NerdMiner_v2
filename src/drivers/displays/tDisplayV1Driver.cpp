@@ -2,6 +2,10 @@
 
 #ifdef V1_DISPLAY
 
+#ifdef NERDMINER_DUAL_SCREEN
+#include <WiFi.h>
+#include <stdio.h>
+#endif
 #include <TFT_eSPI.h>
 #include "media/images_240_135.h"
 #include "media/myFonts.h"
@@ -17,6 +21,20 @@
 OpenFontRender render;
 TFT_eSPI tft = TFT_eSPI();                  // Invoke library, pins defined in User_Setup.h
 TFT_eSprite background = TFT_eSprite(&tft); // Invoke library sprite
+
+#ifdef NERDMINER_DUAL_SCREEN
+static bool s_skipIntPush = false;
+#endif
+
+static void tDisplayV1FinishFrame(void)
+{
+#ifdef NERDMINER_DUAL_SCREEN
+  if (s_skipIntPush) {
+    return;
+  }
+#endif
+  background.pushSprite(0, 0);
+}
 
 void tDisplay_Init(void)
 {
@@ -94,7 +112,7 @@ void tDisplay_MinerScreen(unsigned long mElapsed)
   render.rdrawString(data.currentTime.c_str(), 215, 1, TFT_BLACK);
 
   // Push prepared background to screen
-  background.pushSprite(0, 0);
+  tDisplayV1FinishFrame();
 }
 
 void tDisplay_ClockScreen(unsigned long mElapsed)
@@ -132,7 +150,7 @@ void tDisplay_ClockScreen(unsigned long mElapsed)
   background.drawString(data.currentTime.c_str(), 70, 25, GFXFF);
 
   // Push prepared background to screen
-  background.pushSprite(0, 0);
+  tDisplayV1FinishFrame();
 }
 
 void tDisplay_GlobalHashScreen(unsigned long mElapsed)
@@ -191,7 +209,7 @@ void tDisplay_GlobalHashScreen(unsigned long mElapsed)
   background.drawString(data.remainingBlocks.c_str(), 55, 125, FONT2);
 
   // Push prepared background to screen
-  background.pushSprite(0, 0);
+  tDisplayV1FinishFrame();
 }
 
 void tDisplay_BTCprice(unsigned long mElapsed)
@@ -229,7 +247,7 @@ void tDisplay_BTCprice(unsigned long mElapsed)
   background.drawString(data.btcPrice.c_str(), 82, 50, GFXFF);
 
   // Push prepared background to screen
-  background.pushSprite(0, 0);
+  tDisplayV1FinishFrame();
 }
 
 void tDisplay_LoadingScreen(void)
@@ -253,7 +271,101 @@ void tDisplay_DoLedStuff(unsigned long frame)
 {
 }
 
+#ifdef NERDMINER_DUAL_SCREEN
+void tDisplayV1StockFrame(int screenIndex, const uint16_t **bits, uint16_t *w, uint16_t *h)
+{
+  // Shared PROGMEM — do not include images_240_135.h from another TU.
+  if (!bits || !w || !h) {
+    return;
+  }
+  switch (screenIndex) {
+    case 1:
+      *bits = minerClockScreen;
+      *w = minerClockWidth;
+      *h = minerClockHeight;
+      break;
+    case 2:
+      *bits = globalHashScreen;
+      *w = globalHashWidth;
+      *h = globalHashHeight;
+      break;
+    case 3:
+      *bits = priceScreen;
+      *w = priceScreenWidth;
+      *h = priceScreenHeight;
+      break;
+    default:
+      *bits = MinerScreen;
+      *w = MinerWidth;
+      *h = MinerHeight;
+      break;
+  }
+}
+
+void tDisplayV1PushStockChrome(TFT_eSprite *spr, int screenIndex)
+{
+  const uint16_t *bits = nullptr;
+  uint16_t w = 0, h = 0;
+  tDisplayV1StockFrame(screenIndex, &bits, &w, &h);
+  if (!spr || !bits) {
+    return;
+  }
+  spr->pushImage(0, 0, w, h, bits);
+}
+#endif
+
 CyclicScreenFunction tDisplayCyclicScreens[] = {tDisplay_MinerScreen, tDisplay_ClockScreen, tDisplay_GlobalHashScreen, tDisplay_BTCprice};
+
+#ifdef NERDMINER_DUAL_SCREEN
+void tDisplayV1ComposeCyclic(int screenIndex, unsigned long mElapsed, bool pushToInt)
+{
+  if (screenIndex < 0 || screenIndex >= (int)SCREENS_ARRAY_SIZE(tDisplayCyclicScreens)) {
+    screenIndex = 0;
+  }
+  s_skipIntPush = !pushToInt;
+  tDisplayCyclicScreens[screenIndex](mElapsed);
+  s_skipIntPush = false;
+}
+
+const uint16_t *tDisplayV1SpriteBits(uint16_t *w, uint16_t *h)
+{
+  if (w) {
+    *w = WIDTH;
+  }
+  if (h) {
+    *h = HEIGHT;
+  }
+  return (const uint16_t *)background.getPointer();
+}
+
+void tDisplayV1PaintLivePulse(unsigned long mElapsed)
+{
+  // Overlay only — connecting/hash must change every second (not stuck at 0).
+  // Do not call getCurrentHashRate here (averager lives in getMiningData).
+  extern uint32_t elapsedKHs;
+  extern uint64_t upTime;
+  extern monitor_data mMonitor;
+
+  const char *st;
+  if (WiFi.status() != WL_CONNECTED) {
+    st = "WIFI";
+  } else if (mMonitor.NerdStatus == NM_hashing || elapsedKHs > 0) {
+    st = "HASH";
+  } else {
+    st = "CONN";
+  }
+
+  (void)mElapsed;
+  char buf[32];
+  snprintf(buf, sizeof(buf), "%s %luKH %lus", st, (unsigned long)elapsedKHs,
+           (unsigned long)upTime);
+
+  tft.setTextDatum(TL_DATUM);
+  tft.setTextColor(0xDEDB, TFT_BLACK);
+  tft.fillRect(0, 126, 160, 9, TFT_BLACK);
+  tft.drawString(buf, 2, 126, 1);
+}
+#endif
 
 DisplayDriver tDisplayV1Driver = {
     tDisplay_Init,
