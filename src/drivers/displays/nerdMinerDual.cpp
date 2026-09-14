@@ -68,6 +68,7 @@ void nerd_dual_init()
 
 static volatile bool s_intDirty = true;
 static int s_intDrawn = -1;
+static unsigned long s_lastElapsed = 1000;
 
 void nerd_mark_int_nav_dirty()
 {
@@ -79,7 +80,7 @@ void nerd_poll_int_nav()
     if (!g_ext || !s_intDirty) {
         return;
     }
-    nerd_draw_int_nav_hud(nerd_nav()->current_cyclic_screen, 0);
+    nerd_draw_int_nav_hud(nerd_nav()->current_cyclic_screen, s_lastElapsed);
 }
 
 void nerd_draw_int_nav_hud(int screenIndex, unsigned long mElapsed)
@@ -92,16 +93,23 @@ void nerd_draw_int_nav_hud(int screenIndex, unsigned long mElapsed)
         screenIndex = 0;
     }
 
-    // Floor: INT dirty-only. No 1 Hz full V1 goods paint.
-    // Redraw on dirty / index / view change only. Force mElapsed==0 so
-    // stock chrome/status is used, not live mining ticks (those stay EXT).
-    (void)mElapsed;
+    // Live 1 Hz ticks (mElapsed > 0) must paint. Dirty/view still covers nav.
+    // Never pass 0 into cyclic screens — that froze DigitalNumbers on zeros
+    // and poisoned getCurrentHashRate's averager (0/0 = NaN).
     const bool viewChanged = (screenIndex != s_intDrawn);
-    if (!s_intDirty && !viewChanged) {
+    const bool liveTick = (mElapsed > 0);
+    if (!s_intDirty && !viewChanged && !liveTick) {
         return;
     }
 
-    nav->cyclic_screens[screenIndex](0);
+    unsigned long e = mElapsed;
+    if (e == 0) {
+        e = s_lastElapsed;
+    } else {
+        s_lastElapsed = e;
+    }
+
+    nav->cyclic_screens[screenIndex](e);
     s_intDrawn = screenIndex;
     s_intDirty = false;
 }

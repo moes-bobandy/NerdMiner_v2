@@ -167,9 +167,10 @@ void drawCurrentScreen(unsigned long mElapsed)
     idx = 0;
   }
 #ifdef NERDMINER_DUAL_SCREEN
-  // INT cyclic menu first so nav does not wait on the slow EXT mining paint.
+  // INT first so nav does not wait on the slow EXT mining paint.
+  // Pass live mElapsed — forcing 0 froze INT on zeros after WiFi join.
   if (nerd_ext_available()) {
-    nerd_draw_int_nav_hud(idx, 0);
+    nerd_draw_int_nav_hud(idx, mElapsed);
     nerd_draw_int_live_pulse(mElapsed);
   }
   nerd_ext_begin_frame();

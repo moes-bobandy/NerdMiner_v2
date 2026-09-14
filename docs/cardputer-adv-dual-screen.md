@@ -15,8 +15,8 @@ Stock PlatformIO env `M5-Cardputer-Adv` is unchanged (keyboard + Launcher path f
 
 When EXT is up, INT and EXT share the **stock V1 visual scheme** (logo, chrome, DigitalNumbers / `0xDEDB` like single-screen NerdMiner) but **different info** — not identical clones:
 
-- **INT (240×135):** nav/status only (plus a tiny live pulse). Dense stock tDisplayV1 screens. Full chrome is dirty-only (index / view / `s_intDirty`). No 1 Hz full V1 goods paint. `mElapsed` forced to 0 on chrome. A tiny 1 Hz live pulse (`WIFI` / `CONN` / `HASH` + uptime) bypasses `s_intDirty` so INT is not fully frozen while mining. No custom / yellowish HUD (`C_ORANGE` banned).
-- **EXT (320×240):** mining goods. Same stock V1 frame (composed via `tDisplayV1ComposeCyclic` + DigitalNumbers) scaled to the porkchop **every 1 Hz tick** (`blitLiveStock` — not index-only), plus a denser mining-goods band in `0xDEDB`. Live goods stay here.
+- **INT (240×135):** nav/status only, with live ticks. Dense stock tDisplayV1 screens painted on **live 1 Hz `mElapsed`** (plus dirty/view for nav). Do **not** force `mElapsed==0` — that froze DigitalNumbers on zeros and poisoned KH/s (`0/0` NaN in the averager). Tiny `WIFI` / `CONN` / `HASH` + uptime pulse still bypasses `s_intDirty`. No custom / yellowish HUD (`C_ORANGE` banned).
+- **EXT (320×240):** mining goods. Same stock V1 frame (composed via `tDisplayV1ComposeCyclic` + DigitalNumbers) scaled to the porkchop **every 1 Hz tick** (`blitLiveStock` — not index-only, never re-compose with `mElapsed==0`). Goods-band dirty rects include KH/s, shares, `WIFI`/`CONN`/`HASH` + uptime so values move after WiFi join.
 
 No stripped NETWORK-only debug chrome. No per-tick INT `fillSprite` except the stock screen's own `pushSprite`.
 
@@ -143,9 +143,9 @@ On the dirt unit (porkchop EXT wired, dual bin, SD present):
 Same Launcher app-only flash as above. Wipe (v1) must stay **PASS**. Then:
 
 1. **EXT orientation (v2.5):** MINING/CLOCK/NETWORK/PRICE on the porkchop must read left-to-right **and** right-side-up. MADCTL stays boot-only `0x28` (`MV|BGR` — no MX, no MY, no MH, no ML). Software Y-flip in `ili9341Ext` (`extFlipY` + reverse row writes) fixes the 0x28 upside-down field result. Do **not** flip Y with MADCTL bits — `0xAC` was backwards+upside-down; `0x38` was upside-down + RTL + frozen.
-2. **Live motion (v2.5):** EXT `blitLiveStock` runs every 1 Hz monitor tick (PR #12 `blitStockOnce` froze the art). Goods-band dirty rects include hashrate / uptime so values move while online/hashing. INT chrome stays dirty-on-nav; the tiny `WIFI`/`CONN`/`HASH` pulse updates every second (not gated by `s_intDirty`).
+2. **Live motion (v2.5):** Must leave **frozen zeros**. EXT `blitLiveStock` every 1 Hz with live `mElapsed` (PR #12 `blitStockOnce` froze art on boot zeros; restore-compose with `0` poisoned KH/s). Goods-band dirty rects include KH/s / shares / `WIFI|CONN|HASH` + uptime. INT paints live `mElapsed` every monitor tick (not `mElapsed==0`). Pulse still bypasses `s_intDirty`. Software Y-flip is **rows only** (no X / column reverse).
 3. **Down key:** **Fn+`.`** moves MINING → CLOCK → NETWORK → PRICE. Bare `;` / `.` still next (v1.2). **Fn+`;`** prev. `p` / `,` / Backspace / G0 unchanged.
-4. **INT lag / dirty-only chrome:** After nav, INT chrome updates within about one monitor tick (~100 ms). No 1 Hz full V1 goods paint. No per-tick `fillSprite`.
+4. **INT lag / live chrome:** After nav, INT updates within about one monitor tick (~100 ms). 1 Hz live `mElapsed` paint so KH/s / uptime / connecting are not stuck at 0. No per-tick extra `fillSprite` outside stock V1 `pushSprite`.
 5. **Stock chrome (v2.1b / v2.2b):** INT looks like stock single-screen NerdMiner (logo, clock, BLOCK TEMPLATES / BEST DIFFICULTY / 32BITS SHARES / VALID BLOCKS, KH/s, uptime, gauge, DigitalNumbers / `0xDEDB`). No `C_ORANGE` / custom yellow HUD. EXT composes the same V1 screens (live `mElapsed`) and scale-blits them, plus a `0xDEDB` goods band. Not identical clones.
 
 If a wipe remains, note whether it is every second (redraw) or only around SD/boot (bus). Serial `>>> EXT miner|clock|global|price` marks each 1 Hz paint.

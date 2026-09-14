@@ -9,8 +9,11 @@
 #include "drivers/devices/device.h"
 
 #include <string.h>
+#include <WiFi.h>
 
 extern uint64_t upTime;
+extern monitor_data mMonitor;
+extern uint32_t elapsedKHs;
 
 // Stock V1 palette only (tDisplayV1 / DigitalNumbers / 0xDEDB). Yellow custom HUD banned.
 #define C_BG      0x0000
@@ -89,14 +92,16 @@ static void enterExtScreen(int id)
 
 static void blitLiveStock(int screenIndex, unsigned long mElapsed)
 {
-    // Every 1 Hz monitor tick — not index-only. PR #12 blitStockOnce froze EXT art.
-    // Full stock V1 frame (art + DigitalNumbers / 0xDEDB), then restore INT sprite.
+    // Every 1 Hz monitor tick — not index-only. PR #12 blitStockOnce froze EXT
+    // art on boot zeros. Do not re-compose with mElapsed==0 (poisons KH/s).
+    if (mElapsed == 0) {
+        mElapsed = 1000;
+    }
     tDisplayV1ComposeCyclic(screenIndex, mElapsed, false);
     uint16_t sw = 0, sh = 0;
     const uint16_t *bits = tDisplayV1SpriteBits(&sw, &sh);
     if (!bits || sw == 0 || sh == 0) {
         s_artH = 180;
-        tDisplayV1ComposeCyclic(screenIndex, 0, false);
         return;
     }
     int16_t dh = (int16_t)((int32_t)sh * W / sw);
@@ -105,7 +110,6 @@ static void blitLiveStock(int screenIndex, unsigned long mElapsed)
     }
     s_artH = dh;
     ili9341ExtPushImageScaled(0, 0, W, dh, bits, (int16_t)sw, (int16_t)sh);
-    tDisplayV1ComposeCyclic(screenIndex, 0, false);
 }
 
 static void drawGoodsBand(void)
@@ -131,9 +135,17 @@ static void dirtyText(char *slot, size_t cap, const char *text,
 
 static void dirtyUptimeTick(int16_t x, int16_t y)
 {
-    char tick[16];
-    snprintf(tick, sizeof(tick), "%lus", (unsigned long)upTime);
-    dirtyText(s_uptime, sizeof(s_uptime), tick, x, y, C_CREAM, C_BG, 1, 8);
+    const char *st;
+    if (WiFi.status() != WL_CONNECTED) {
+        st = "WIFI";
+    } else if (mMonitor.NerdStatus == NM_hashing || elapsedKHs > 0) {
+        st = "HASH";
+    } else {
+        st = "CONN";
+    }
+    char tick[20];
+    snprintf(tick, sizeof(tick), "%s %lus", st, (unsigned long)upTime);
+    dirtyText(s_uptime, sizeof(s_uptime), tick, x, y, C_CREAM, C_BG, 1, 12);
 }
 
 static void extMinerScreen(unsigned long mElapsed)
@@ -166,8 +178,9 @@ static void extMinerScreen(unsigned long mElapsed)
               8, (int16_t)(s_artH + 40), C_CREAM, C_BG, 1, 8);
     dirtyText(s_valids, sizeof(s_valids), data.valids.c_str(),
               160, (int16_t)(s_artH + 40), C_CREAM, C_BG, 1, 6);
-    dirtyText(s_uptime, sizeof(s_uptime), data.timeMining.c_str(),
+    dirtyText(s_hdrClock, sizeof(s_hdrClock), data.timeMining.c_str(),
               240, (int16_t)(s_artH + 40), C_CREAM, C_BG, 1, 10);
+    dirtyUptimeTick(8, (int16_t)(s_artH + 50));
 }
 
 static void extClockScreen(unsigned long mElapsed)

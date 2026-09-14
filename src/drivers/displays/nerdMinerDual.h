@@ -32,8 +32,8 @@ void tDisplayV1PaintLivePulse(unsigned long mElapsed);
 void nerd_dual_init();
 void nerd_draw_int_nav_hud(int screenIndex, unsigned long mElapsed);
 void nerd_draw_int_live_pulse(unsigned long mElapsed);
-// Keyboard / G0 mark dirty; monitor animateCurrentScreen paints INT within ~100ms
-// so the cyclic menu does not wait on the 1 Hz EXT mining refresh.
+// Keyboard / G0 mark dirty; 1 Hz drawCurrentScreen passes live mElapsed.
+// Never force mElapsed==0 (frozen zeros / poisoned KH/s averager).
 void nerd_mark_int_nav_dirty();
 void nerd_poll_int_nav();
 

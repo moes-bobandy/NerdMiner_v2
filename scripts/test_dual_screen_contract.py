@@ -180,9 +180,10 @@ class DualScreenContractTests(unittest.TestCase):
         self.assertIn("GRAM is retained", dual)
         self.assertIn("nerd_ext_begin_frame", dual)
         self.assertIn("cyclic_screens[screenIndex]", dual)
-        self.assertIn("nav->cyclic_screens[screenIndex](0)", dual)
-        self.assertIn("if (!s_intDirty && !viewChanged)", dual)
-        self.assertNotIn("&& mElapsed == 0", dual)
+        self.assertIn("nav->cyclic_screens[screenIndex](e)", dual)
+        self.assertIn("if (!s_intDirty && !viewChanged && !liveTick)", dual)
+        self.assertIn("s_lastElapsed", dual)
+        self.assertNotIn("nav->cyclic_screens[screenIndex](0)", dual)
         self.assertIn("DigitalNumbers", read("src/drivers/displays/tDisplayV1Driver.cpp"))
         self.assertIn("0xDEDB", read("src/drivers/displays/tDisplayV1Driver.cpp"))
         self.assertIn("tDisplayV1ComposeCyclic", read("src/drivers/displays/tDisplayV1Driver.cpp"))
@@ -206,12 +207,19 @@ class DualScreenContractTests(unittest.TestCase):
         self.assertIn("nerd_ext_end_frame()", disp)
         self.assertIn("nerd_mark_int_nav_dirty()", disp)
         self.assertIn("nerd_poll_int_nav()", disp)
-        # INT menu before EXT mining paint (lag fix).
+        # INT menu before EXT mining paint (lag fix). Live mElapsed, not 0.
         self.assertLess(
-            disp.find("nerd_draw_int_nav_hud(idx, 0)"),
+            disp.find("nerd_draw_int_nav_hud(idx, mElapsed)"),
             disp.find("nerd_ext_begin_frame()"),
         )
-        self.assertNotIn("nerd_draw_int_nav_hud(idx, mElapsed)", disp)
+        self.assertNotIn("nerd_draw_int_nav_hud(idx, 0)", disp)
+        mon = read("src/monitor.cpp")
+        self.assertIn("if (mElapsed == 0)", mon)
+        self.assertIn("s_lastHashRate", mon)
+        self.assertIn("for (int16_t dx = 0; dx < dw; ++dx)", low)
+        self.assertNotIn("dx = (int16_t)(dw - 1)", low)
+        self.assertIn("rows only", low)
+        self.assertNotIn("tDisplayV1ComposeCyclic(screenIndex, 0, false)", driver)
 
     def test_docs_and_launcher_recipe(self) -> None:
         docs = read("docs/cardputer-adv-dual-screen.md")

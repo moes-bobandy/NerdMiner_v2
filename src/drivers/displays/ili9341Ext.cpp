@@ -47,7 +47,8 @@
 // Contract v2.5: boot-only MADCTL MV|BGR = 0x28 (no MX, no MY, no MH, no ML).
 // Field: 0x28 L/R-good + sharp, ONLY upside-down. 0xAC / 0x38 traded L/R vs Y.
 // Keep BGR. Write once in sendInit — do not rewrite MADCTL mid-run.
-// Fix Y in software (extFlipY + reverse row writes). Do NOT set MY/MH/ML.
+// Fix Y in software: reverse ROWS only (vertical). Do NOT reverse columns / X.
+// Do NOT set MY/MH/ML.
 // A/B override: -DEXT_TFT_MADCTL=  (rollbacks: 0xE8, 0xA8, 0x68, 0xAC, 0x38).
 #ifndef EXT_TFT_MADCTL
 #define EXT_TFT_MADCTL (ILI9341_MADCTL_MV | ILI9341_MADCTL_BGR)
@@ -547,8 +548,7 @@ void ili9341ExtPushImageScaled(int16_t x, int16_t y, int16_t dw, int16_t dh,
     digitalWrite(EXT_TFT_CS, LOW);
     uint8_t buf[160];
     uint32_t bp = 0;
-    // SW Y-flip: setAddrWindow remapped the dest; emit source bottom→top
-    // so row 0 of the sprite lands at the physical top of that window.
+    // SW Y-flip: rows only (bottom→top). Columns stay left→right (dx 0..dw-1).
 #if EXT_TFT_SW_FLIP_Y
     for (int16_t dy = (int16_t)(dh - 1); dy >= 0; --dy)
 #else

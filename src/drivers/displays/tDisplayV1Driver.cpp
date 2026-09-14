@@ -340,28 +340,29 @@ const uint16_t *tDisplayV1SpriteBits(uint16_t *w, uint16_t *h)
 
 void tDisplayV1PaintLivePulse(unsigned long mElapsed)
 {
-  // Tiny overlay only — do not fillSprite / full V1 goods. Do not call
-  // getCurrentHashRate (mutates the averager; mElapsed==0 is divide-by-zero).
+  // Overlay only — connecting/hash must change every second (not stuck at 0).
+  // Do not call getCurrentHashRate here (averager lives in getMiningData).
   extern uint32_t elapsedKHs;
   extern uint64_t upTime;
+  extern monitor_data mMonitor;
 
-  (void)mElapsed;
   const char *st;
   if (WiFi.status() != WL_CONNECTED) {
     st = "WIFI";
-  } else if (elapsedKHs == 0) {
-    st = "CONN";
-  } else {
+  } else if (mMonitor.NerdStatus == NM_hashing || elapsedKHs > 0) {
     st = "HASH";
+  } else {
+    st = "CONN";
   }
 
-  char buf[28];
+  (void)mElapsed;
+  char buf[32];
   snprintf(buf, sizeof(buf), "%s %luKH %lus", st, (unsigned long)elapsedKHs,
            (unsigned long)upTime);
 
   tft.setTextDatum(TL_DATUM);
   tft.setTextColor(0xDEDB, TFT_BLACK);
-  tft.fillRect(0, 126, 140, 9, TFT_BLACK);
+  tft.fillRect(0, 126, 160, 9, TFT_BLACK);
   tft.drawString(buf, 2, 126, 1);
 }
 #endif
